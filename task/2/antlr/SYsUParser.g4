@@ -7,10 +7,11 @@ options {
 primaryExpression
     :   Identifier
     |   Constant
+    |   LeftParen expression RightParen
     ;
 
 postfixExpression
-    :   primaryExpression  
+    :   primaryExpression (LeftBracket expression RightBracket)*
     ;
 
 unaryExpression
@@ -24,8 +25,12 @@ unaryOperator
     :   Plus | Minus
     ;
 
+multiplicativeExpression
+    :   unaryExpression ((Times|Divide|Modulo) unaryExpression)*
+    ;
+
 additiveExpression
-    :   unaryExpression ((Plus|Minus) unaryExpression)*
+    :   multiplicativeExpression ((Plus|Minus) multiplicativeExpression)*
     ;
 
 
@@ -49,6 +54,7 @@ declarationSpecifiers
 
 declarationSpecifier
     :   typeSpecifier
+    |   typeQualifier
     ;
 
 initDeclaratorList
@@ -62,6 +68,11 @@ initDeclarator
 
 typeSpecifier
     :   Int
+    ;
+
+
+typeQualifier
+    :   Const
     ;
 
 

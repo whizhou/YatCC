@@ -13,3 +13,7 @@ Minus=12
 Comma=13
 LeftBracket=14
 RightBracket=15
+Const=16
+Times=17
+Divide=18
+Modulo=19

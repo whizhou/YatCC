@@ -10,6 +10,7 @@ namespace {
 
 using namespace SYsULexerTokens;
 
+// TODO: Finish kClangTokens
 static const std::unordered_map<std::string, size_t> kClangTokens{
   { "eof", antlr4::Token::EOF },
   { "int", kInt },
@@ -26,7 +27,11 @@ static const std::unordered_map<std::string, size_t> kClangTokens{
   { "minus", kMinus },
   { "comma", kComma },
   { "l_square", kLeftBracket },
-  { "r_square", kRightBracket }
+  { "r_square", kRightBracket },
+  { "const", kConst },
+  { "star", kTimes },
+  { "slash", kDivide },
+  { "percent", kModulo },
 };
 
 } // namespace

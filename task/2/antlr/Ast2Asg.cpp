@@ -87,6 +87,13 @@ Ast2Asg::operator()(ast::DeclarationSpecifiersContext* ctx)
         ABORT(); // 未知的类型说明符
     }
 
+    else if (auto p = i->typeQualifier()) {
+      if (p->Const())
+        ret.second.const_ = true;
+      else
+        ABORT(); // 未知的类型限定符
+    }
+
     else
       ABORT();
   }
@@ -151,6 +158,15 @@ eval_arrlen(Expr* expr)
 
       case BinaryExpr::kSub:
         return lft - rht;
+
+      case BinaryExpr::kMul:
+        return lft * rht;
+
+      case BinaryExpr::kDiv:
+        return lft / rht;
+
+      case BinaryExpr::kMod:
+        return lft % rht;
 
       default:
         ABORT();
@@ -221,10 +237,47 @@ Ast2Asg::operator()(ast::AssignmentExpressionContext* ctx)
   return ret;
 }
 Expr*
-Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
+Ast2Asg::operator()(ast::MultiplicativeExpressionContext* ctx)
 {
   auto children = ctx->children;
   Expr* ret = self(dynamic_cast<ast::UnaryExpressionContext*>(children[0]));
+
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto node = make<BinaryExpr>();
+
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    switch (token) {
+      case ast::Times:
+        node->op = node->kMul;
+        break;
+
+      case ast::Divide:
+        node->op = node->kDiv;
+        break;
+
+      case ast::Modulo:
+        node->op = node->kMod;
+        break;
+
+      default:
+        ABORT();
+    }
+
+    node->lft = ret;
+    node->rht = self(dynamic_cast<ast::UnaryExpressionContext*>(children[++i]));
+    ret = node;
+  }
+
+  return ret;
+}
+
+Expr*
+Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
+{
+  auto children = ctx->children;
+  Expr* ret = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[0]));
 
   for (unsigned i = 1; i < children.size(); ++i) {
     auto node = make<BinaryExpr>();
@@ -246,7 +299,7 @@ Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
     }
 
     node->lft = ret;
-    node->rht = self(dynamic_cast<ast::UnaryExpressionContext*>(children[++i]));
+    node->rht = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[++i]));
     ret = node;
   }
 
@@ -286,8 +339,29 @@ Expr*
 Ast2Asg::operator()(ast::PostfixExpressionContext* ctx)
 {
   auto children = ctx->children;
-  auto sub = self(dynamic_cast<ast::PrimaryExpressionContext*>(children[0]));
-  return sub;
+  Expr* ret = self(dynamic_cast<ast::PrimaryExpressionContext*>(children[0]));
+
+  // 处理数组下标访问
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    
+    if (token == ast::LeftBracket) {
+      // 数组下标访问
+      // children[i] 应该是 LeftBracket
+      // children[i+1] 应该是 expression
+      // children[i+2] 应该是 RightBracket
+      auto node = make<BinaryExpr>();
+      node->op = node->kIndex;
+      node->lft = ret;
+      node->rht = self(dynamic_cast<ast::ExpressionContext*>(children[i + 1]));
+      ret = node;
+      i += 2; // 跳过 LeftBracket, expression, RightBracket
+    }
+  }
+
+  return ret;
 }
 
 Expr*
@@ -319,6 +393,12 @@ Ast2Asg::operator()(ast::PrimaryExpressionContext* ctx)
     else
       ret->val = std::stoll(text.substr(1), nullptr, 8);
 
+    return ret;
+  }
+
+  if (ctx->LeftParen()) {
+    auto ret = make<ParenExpr>();
+    ret->sub = self(ctx->expression());
     return ret;
   }
 
