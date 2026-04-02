@@ -11,7 +11,14 @@ primaryExpression
     ;
 
 postfixExpression
-    :   primaryExpression (LeftBracket expression RightBracket)*
+    :   primaryExpression
+    |   postfixExpression LeftBracket expression RightBracket
+    |   postfixExpression LeftParen RightParen
+    |   postfixExpression LeftParen argumentExpressionList RightParen
+    ;
+
+argumentExpressionList
+    :   assignmentExpression (Comma assignmentExpression)*
     ;
 
 unaryExpression
@@ -82,7 +89,27 @@ declarator
 
 directDeclarator
     :   Identifier
-    |   directDeclarator LeftBracket assignmentExpression? RightBracket
+    |   directDeclarator LeftBracket assignmentExpression RightBracket
+    |   directDeclarator LeftBracket RightBracket
+    |   directDeclarator LeftParen parameterTypeList RightParen
+    |   directDeclarator LeftParen identifierList RightParen
+    |   directDeclarator LeftParen RightParen
+    ;
+
+parameterTypeList
+    :   parameterList
+    // |   parameterTypeList Comma Ellipsis
+    ;
+
+parameterList
+    :   parameterDeclaration
+    |   parameterList Comma parameterDeclaration
+    ;
+
+parameterDeclaration
+    :   declarationSpecifiers declarator
+    // |   declarationSpecifiers abstractDeclarator
+    |   declarationSpecifiers
     ;
 
 identifierList
@@ -143,6 +170,12 @@ externalDeclaration
     ;
 
 functionDefinition
-    : declarationSpecifiers directDeclarator LeftParen RightParen compoundStatement
+    : declarationSpecifiers directDeclarator declarationList compoundStatement
+    | declarationSpecifiers directDeclarator compoundStatement
+    ;
+
+declarationList
+    : declaration
+    | declarationList declaration
     ;
 
