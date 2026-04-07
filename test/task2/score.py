@@ -720,6 +720,8 @@ if __name__ == "__main__":
     log_level = args.log_level
 
     ctest_cases = "^task2/" if not args.diy_mod else "^task2-diy/"
+    # diy 模式下 bindir 是输出子目录，CTestTestfile.cmake 在其父目录中
+    ctest_dir = osp.dirname(args.bindir) if args.diy_mod else args.bindir
 
     if case_name := args.single:
         for case in cases_helper.cases:
@@ -739,7 +741,7 @@ if __name__ == "__main__":
                 [
                     args.ctest_exe,
                     "--test-dir",
-                    args.bindir,
+                    ctest_dir,
                     "-R",
                     ctest_cases + case_name,
                     # 注意这里一定不能写成 test2/，否则会无限递归下去
@@ -759,7 +761,7 @@ if __name__ == "__main__":
         print("运行 CTest 以得到结果...", end="", flush=True)
         with out, err:
             subps.run(
-                [args.ctest_exe, "--test-dir", args.bindir, "-R", ctest_cases + ".*"],
+                [args.ctest_exe, "--test-dir", ctest_dir, "-R", ctest_cases + ".*"],
                 stdout=out,
                 stderr=err,
             )
