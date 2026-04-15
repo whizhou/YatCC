@@ -52,6 +52,14 @@ public:
 
   Expr* operator()(ast::AssignmentExpressionContext* ctx);
 
+  Expr* operator()(ast::LogicalOrExpressionContext* ctx);
+
+  Expr* operator()(ast::LogicalAndExpressionContext* ctx);
+
+  Expr* operator()(ast::EqualityExpressionContext* ctx);
+
+  Expr* operator()(ast::RelationalExpressionContext* ctx);
+
   Expr* operator()(ast::AdditiveExpressionContext* ctx);
 
   Expr* operator()(ast::MultiplicativeExpressionContext* ctx);
@@ -75,6 +83,10 @@ public:
   CompoundStmt* operator()(ast::CompoundStatementContext* ctx);
 
   Stmt* operator()(ast::ExpressionStatementContext* ctx);
+
+  Stmt* operator()(ast::SelectionStatementContext* ctx);
+
+  Stmt* operator()(ast::IterationStatementContext* ctx);
 
   Stmt* operator()(ast::JumpStatementContext* ctx);
 

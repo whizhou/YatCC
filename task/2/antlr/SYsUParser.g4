@@ -29,20 +29,35 @@ unaryExpression
     ;
 
 unaryOperator
-    :   Plus | Minus
+    :   Plus | Minus | Not
     ;
 
 multiplicativeExpression
-    :   unaryExpression ((Times|Divide|Modulo) unaryExpression)*
+    :   unaryExpression ((Star|Slash|Percent) unaryExpression)*
     ;
 
 additiveExpression
     :   multiplicativeExpression ((Plus|Minus) multiplicativeExpression)*
     ;
 
+relationalExpression
+    :   additiveExpression ((Less | Greater | LessEqual | GreaterEqual) additiveExpression)*
+    ;
+
+equalityExpression
+    :   relationalExpression ((EqualEqual | NotEqual) relationalExpression)*
+    ;
+
+logicalAndExpression
+    :   equalityExpression (And equalityExpression)*
+    ;
+
+logicalOrExpression
+    :   logicalAndExpression (Or logicalAndExpression)*
+    ;
 
 assignmentExpression
-    :   additiveExpression
+    :   logicalOrExpression
     |   unaryExpression Equal assignmentExpression
     ;
 
@@ -75,6 +90,7 @@ initDeclarator
 
 typeSpecifier
     :   Int
+    |   Void
     ;
 
 
@@ -129,6 +145,8 @@ initializerList
 statement
     :   compoundStatement
     |   expressionStatement
+    |   selectionStatement
+    |   iterationStatement
     |   jumpStatement
     ;
 
@@ -149,11 +167,18 @@ expressionStatement
     :   expression? Semi
     ;
 
+selectionStatement
+    :   If LeftParen expression RightParen statement (Else statement)?
+    ;
 
+iterationStatement
+    :   While LeftParen expression RightParen statement
+    ;
 
 jumpStatement
-    :   (Return expression?)
-    Semi
+    :   Return expression? Semi
+    |   Break Semi
+    |   Continue Semi
     ;
 
 compilationUnit
