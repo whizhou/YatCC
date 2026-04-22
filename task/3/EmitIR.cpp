@@ -79,6 +79,12 @@ EmitIR::operator()(Expr* obj)
   if (auto p = obj->dcst<BinaryExpr>())
     return self(p);
 
+  if (auto p = obj->dcst<UnaryExpr>())
+    return self(p);
+
+  if (auto p = obj->dcst<ParenExpr>())
+    return self(p);
+
   ABORT();
 }
 
@@ -89,6 +95,41 @@ EmitIR::operator()(IntegerLiteral* obj)
 }
 
 // TODO: 在此添加对更多表达式类型的处理
+
+llvm::Value*
+EmitIR::operator()(UnaryExpr* obj)
+{
+  /*
+  struct UnaryExpr : Expr
+  {
+    enum Op
+    {
+      kINVALID,
+      kPos,
+      kNeg,
+      kNot
+    };
+
+    Op op{ kINVALID };
+    Expr* sub{ nullptr };
+  };
+  */
+  llvm::Value* sub = self(obj->sub);
+
+  auto& irb = *mCurIrb;
+
+  switch (obj->op) {
+
+    case UnaryExpr::kPos:
+      return sub;
+    
+    case UnaryExpr::kNeg:
+      return irb.CreateNeg(sub);
+
+    default:
+      ABORT();
+  }
+}
 
 llvm::Value*
 EmitIR::operator()(BinaryExpr* obj)
@@ -109,9 +150,33 @@ EmitIR::operator()(BinaryExpr* obj)
     case BinaryExpr::kAdd:
       return irb.CreateAdd(lftVal, rhtVal);
 
+    case BinaryExpr::kSub:
+      return irb.CreateSub(lftVal, rhtVal);
+
+    case BinaryExpr::kMul:
+      return irb.CreateMul(lftVal, rhtVal);
+
+    case BinaryExpr::kDiv:
+      return irb.CreateSDiv(lftVal, rhtVal);
+
+    case BinaryExpr::kMod:
+      return irb.CreateSRem(lftVal, rhtVal);
+
     default:
       ABORT();
   }
+}
+
+llvm::Value*
+EmitIR::operator()(asg::ParenExpr* obj)
+{
+  /*
+  struct ParenExpr : Expr
+  {
+    Expr* sub{ nullptr };
+  };
+  */
+  return self(obj->sub);
 }
 
 llvm::Value*
