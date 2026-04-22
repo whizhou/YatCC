@@ -2,6 +2,7 @@
 #include "SYsULexer.tokens.hpp"
 #include <unordered_map>
 #include <vector>
+#include <iostream>
 
 using antlr4::ParseCancellationException;
 using std::make_pair;
@@ -10,6 +11,7 @@ namespace {
 
 using namespace SYsULexerTokens;
 
+// TODO: Finish kClangTokens
 static const std::unordered_map<std::string, size_t> kClangTokens{
   { "eof", antlr4::Token::EOF },
   { "int", kInt },
@@ -26,7 +28,26 @@ static const std::unordered_map<std::string, size_t> kClangTokens{
   { "minus", kMinus },
   { "comma", kComma },
   { "l_square", kLeftBracket },
-  { "r_square", kRightBracket }
+  { "r_square", kRightBracket },
+  { "const", kConst },
+  { "star", kStar },
+  { "slash", kSlash },
+  { "percent", kPercent },
+  { "less", kLess },
+  { "greater", kGreater },
+  { "lessequal", kLessEqual },
+  { "greaterequal", kGreaterEqual },
+  { "equalequal", kEqualEqual },
+  { "exclaimequal", kNotEqual },
+  { "if", kIf },
+  { "else", kElse },
+  { "ampamp", kAnd },    // for &&
+  { "pipepipe", kOr },   // for ||
+  { "void", kVoid },     // for void
+  { "while", kWhile },   // for while
+  { "break", kBreak },   // for break
+  { "continue", kContinue }, // for continue
+  { "exclaim", kNot },   // for ! (logical NOT)
 };
 
 } // namespace
@@ -121,6 +142,7 @@ SYsULexer::nextToken()
   return common_token(type, start, stop, text);
 
 FAIL: // 解析失败
+  std::cerr << "Failed to parse line: " << line << std::endl;
   assert(false);
 }
 

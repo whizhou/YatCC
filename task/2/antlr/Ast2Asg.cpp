@@ -79,12 +79,21 @@ Ast2Asg::operator()(ast::DeclarationSpecifiersContext* ctx)
       if (ret.first == Type::Spec::kINVALID) {
         if (p->Int())
           ret.first = Type::Spec::kInt;
+        else if (p->Void())
+          ret.first = Type::Spec::kVoid;
         else
           ABORT(); // 未知的类型说明符
       }
 
       else
         ABORT(); // 未知的类型说明符
+    }
+
+    else if (auto p = i->typeQualifier()) {
+      if (p->Const())
+        ret.second.const_ = true;
+      else
+        ABORT(); // 未知的类型限定符
     }
 
     else
@@ -152,6 +161,15 @@ eval_arrlen(Expr* expr)
       case BinaryExpr::kSub:
         return lft - rht;
 
+      case BinaryExpr::kMul:
+        return lft * rht;
+
+      case BinaryExpr::kDiv:
+        return lft / rht;
+
+      case BinaryExpr::kMod:
+        return lft % rht;
+
       default:
         ABORT();
     }
@@ -184,7 +202,90 @@ Ast2Asg::operator()(ast::DirectDeclaratorContext* ctx, TypeExpr* sub)
     return self(ctx->directDeclarator(), arrayType);
   }
 
+  if (ctx->LeftParen()) {
+    auto funcType = make<FunctionType>();
+    funcType->sub = sub;
+
+    // 清空之前的参数名列表
+    mParamNames.clear();
+
+    if (auto p = ctx->parameterTypeList()) {
+      auto params = self(p);  // 返回 vector<ParamInfo>
+      for (auto& [type, name] : params) {
+        funcType->params.push_back(type);
+        mParamNames.push_back(name);  // 收集参数名
+      }
+    } else if (auto p = ctx->identifierList()) {
+      // identifierList 用于 K&R 风格函数声明
+      auto names = self(p);
+      for (const auto& name : names) {
+        auto paramType = make<Type>();
+        paramType->spec = Type::Spec::kInt;
+        funcType->params.push_back(paramType);
+        mParamNames.push_back(name);  // 收集参数名
+      }
+    }
+    // 如果是 directDeclarator LeftParen RightParen，则参数列表为空
+
+    return self(ctx->directDeclarator(), funcType);
+  }
+
   ABORT();
+}
+
+std::vector<Ast2Asg::ParamInfo>
+Ast2Asg::operator()(ast::ParameterTypeListContext* ctx)
+{
+  return self(ctx->parameterList());
+}
+
+std::vector<Ast2Asg::ParamInfo>
+Ast2Asg::operator()(ast::ParameterListContext* ctx)
+{
+  std::vector<ParamInfo> ret;
+
+  // 递归处理：parameterList 可能包含另一个 parameterList
+  if (auto subList = ctx->parameterList()) {
+    ret = self(subList);
+  }
+
+  // 添加当前层的 parameterDeclaration
+  if (auto decl = ctx->parameterDeclaration()) {
+    ret.push_back(self(decl));
+  }
+
+  return ret;
+}
+
+Ast2Asg::ParamInfo
+Ast2Asg::operator()(ast::ParameterDeclarationContext* ctx)
+{
+  auto sq = self(ctx->declarationSpecifiers());
+
+  if (auto decl = ctx->declarator()) {
+    auto [texp, name] = self(decl, nullptr);
+    auto type = make<Type>();
+    type->spec = sq.first;
+    type->qual = sq.second;
+    type->texp = texp;
+    return { type, name };  // 返回类型和参数名
+  }
+
+  // 只有 declarationSpecifiers，没有 declarator
+  auto type = make<Type>();
+  type->spec = sq.first;
+  type->qual = sq.second;
+  return { type, "" };  // 无参数名的情况
+}
+
+std::vector<std::string>
+Ast2Asg::operator()(ast::IdentifierListContext* ctx)
+{
+  std::vector<std::string> ret;
+  for (auto&& i : ctx->Identifier()) {
+    ret.push_back(i->getText());
+  }
+  return ret;
 }
 
 //==============================================================================
@@ -211,7 +312,7 @@ Ast2Asg::operator()(ast::ExpressionContext* ctx)
 Expr*
 Ast2Asg::operator()(ast::AssignmentExpressionContext* ctx)
 {
-  if (auto p = ctx->additiveExpression())
+  if (auto p = ctx->logicalOrExpression())
     return self(p);
 
   auto ret = make<BinaryExpr>();
@@ -220,11 +321,181 @@ Ast2Asg::operator()(ast::AssignmentExpressionContext* ctx)
   ret->rht = self(ctx->assignmentExpression());
   return ret;
 }
+
+Expr*
+Ast2Asg::operator()(ast::LogicalOrExpressionContext* ctx)
+{
+  auto children = ctx->children;
+  Expr* ret = self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[0]));
+
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto node = make<BinaryExpr>();
+
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    switch (token) {
+      case ast::Or:
+        node->op = node->kOr;
+        break;
+      
+      default:
+        ABORT();
+    }
+
+    node->lft = ret;
+    node->rht = self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[++i]));
+    ret = node;
+  }
+
+  return ret;
+}
+
+Expr*
+Ast2Asg::operator()(ast::LogicalAndExpressionContext* ctx)
+{
+  auto children = ctx->children;
+  Expr* ret = self(dynamic_cast<ast::EqualityExpressionContext*>(children[0]));
+
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto node = make<BinaryExpr>();
+
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    switch (token) {
+      case ast::And:
+        node->op = node->kAnd;
+        break;
+      
+      default:
+        ABORT();
+    }
+
+    node->lft = ret;
+    node->rht = self(dynamic_cast<ast::EqualityExpressionContext*>(children[++i]));
+    ret = node;
+  }
+
+  return ret;
+}
+
+Expr*
+Ast2Asg::operator()(ast::RelationalExpressionContext* ctx)
+{
+  auto children = ctx->children;
+  Expr* ret = self(dynamic_cast<ast::AdditiveExpressionContext*>(children[0]));
+
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto node = make<BinaryExpr>();
+
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    switch (token) {
+      case ast::Less:
+        node->op = node->kLt;
+        break;
+
+      case ast::Greater:
+        node->op = node->kGt;
+        break;
+
+      case ast::LessEqual:
+        node->op = node->kLe;
+        break;
+
+      case ast::GreaterEqual:
+        node->op = node->kGe;
+        break;
+
+      default:
+        ABORT();
+    }
+
+    node->lft = ret;
+    node->rht = self(dynamic_cast<ast::AdditiveExpressionContext*>(children[++i]));
+    ret = node;
+  }
+
+  return ret;
+}
+
+Expr*
+Ast2Asg::operator()(ast::EqualityExpressionContext* ctx)
+{
+  auto children = ctx->children;
+  Expr* ret = self(dynamic_cast<ast::RelationalExpressionContext*>(children[0]));
+
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto node = make<BinaryExpr>();
+
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    switch (token) {
+      case ast::EqualEqual:
+        node->op = node->kEq;
+        break;
+
+      case ast::NotEqual:
+        node->op = node->kNe;
+        break;
+
+      default:
+        ABORT();
+    }
+
+    node->lft = ret;
+    node->rht = self(dynamic_cast<ast::RelationalExpressionContext*>(children[++i]));
+    ret = node;
+  }
+
+  return ret;
+}
+
+Expr*
+Ast2Asg::operator()(ast::MultiplicativeExpressionContext* ctx)
+{
+  auto children = ctx->children;
+  Expr* ret = self(dynamic_cast<ast::UnaryExpressionContext*>(children[0]));
+
+  for (unsigned i = 1; i < children.size(); ++i) {
+    auto node = make<BinaryExpr>();
+
+    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
+                   ->getSymbol()
+                   ->getType();
+    switch (token) {
+      case ast::Star:
+        node->op = node->kMul;
+        break;
+
+      case ast::Slash:
+        node->op = node->kDiv;
+        break;
+
+      case ast::Percent:
+        node->op = node->kMod;
+        break;
+
+      default:
+        ABORT();
+    }
+
+    node->lft = ret;
+    node->rht = self(dynamic_cast<ast::UnaryExpressionContext*>(children[++i]));
+    ret = node;
+  }
+
+  return ret;
+}
+
 Expr*
 Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
 {
   auto children = ctx->children;
-  Expr* ret = self(dynamic_cast<ast::UnaryExpressionContext*>(children[0]));
+  Expr* ret = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[0]));
 
   for (unsigned i = 1; i < children.size(); ++i) {
     auto node = make<BinaryExpr>();
@@ -246,7 +517,7 @@ Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
     }
 
     node->lft = ret;
-    node->rht = self(dynamic_cast<ast::UnaryExpressionContext*>(children[++i]));
+    node->rht = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[++i]));
     ret = node;
   }
 
@@ -273,6 +544,10 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
       ret->op = ret->kNeg;
       break;
 
+    case ast::Not:
+      ret->op = ret->kNot;
+      break;
+
     default:
       ABORT();
   }
@@ -285,9 +560,47 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
 Expr*
 Ast2Asg::operator()(ast::PostfixExpressionContext* ctx)
 {
-  auto children = ctx->children;
-  auto sub = self(dynamic_cast<ast::PrimaryExpressionContext*>(children[0]));
-  return sub;
+  // 处理左递归语法生成的嵌套解析树
+  // 检查是否是基础情况：primaryExpression
+  if (auto primary = ctx->primaryExpression()) {
+    return self(primary);
+  }
+
+  // 递归情况：postfixExpression 后跟操作
+  Expr* ret = self(ctx->postfixExpression());
+
+  // 检查是数组下标访问还是函数调用
+  if (ctx->LeftBracket()) {
+    // 数组下标访问：postfixExpression '[' expression ']'
+    auto node = make<BinaryExpr>();
+    node->op = node->kIndex;
+    node->lft = ret;
+    node->rht = self(ctx->expression());
+    ret = node;
+  }
+  else if (ctx->LeftParen()) {
+    // 函数调用：postfixExpression '(' ')' 或 postfixExpression '(' argumentExpressionList ')'
+    auto node = make<CallExpr>();
+    node->head = ret;
+    
+    // 检查是否有参数列表
+    if (auto argList = ctx->argumentExpressionList()) {
+      node->args = self(argList);
+    }
+    ret = node;
+  }
+
+  return ret;
+}
+
+std::vector<Expr*>
+Ast2Asg::operator()(ast::ArgumentExpressionListContext* ctx)
+{
+  std::vector<Expr*> ret;
+  for (auto&& arg : ctx->assignmentExpression()) {
+    ret.push_back(self(arg));
+  }
+  return ret;
 }
 
 Expr*
@@ -319,6 +632,12 @@ Ast2Asg::operator()(ast::PrimaryExpressionContext* ctx)
     else
       ret->val = std::stoll(text.substr(1), nullptr, 8);
 
+    return ret;
+  }
+
+  if (ctx->LeftParen()) {
+    auto ret = make<ParenExpr>();
+    ret->sub = self(ctx->expression());
     return ret;
   }
 
@@ -360,6 +679,12 @@ Ast2Asg::operator()(ast::StatementContext* ctx)
     return self(p);
 
   if (auto p = ctx->expressionStatement())
+    return self(p);
+
+  if (auto p = ctx->selectionStatement())
+    return self(p);
+
+  if (auto p = ctx->iterationStatement())
     return self(p);
 
   if (auto p = ctx->jumpStatement())
@@ -407,6 +732,32 @@ Ast2Asg::operator()(ast::ExpressionStatementContext* ctx)
 }
 
 Stmt*
+Ast2Asg::operator()(ast::SelectionStatementContext* ctx)
+{
+  auto ret = make<IfStmt>();
+  ret->cond = self(ctx->expression());
+  ret->then = self(ctx->statement(0));
+  if (ctx->Else())
+    ret->else_ = self(ctx->statement(1));
+  else
+    ret->else_ = nullptr;
+  return ret;
+}
+
+Stmt*
+Ast2Asg::operator()(ast::IterationStatementContext* ctx)
+{
+  if (ctx->While()) {
+    auto ret = make<WhileStmt>();
+    ret->cond = self(ctx->expression());
+    ret->body = self(ctx->statement());
+    return ret;
+  }
+
+  ABORT();
+}
+
+Stmt*
 Ast2Asg::operator()(ast::JumpStatementContext* ctx)
 {
   if (ctx->Return()) {
@@ -414,6 +765,18 @@ Ast2Asg::operator()(ast::JumpStatementContext* ctx)
     ret->func = mCurrentFunc;
     if (auto p = ctx->expression())
       ret->expr = self(p);
+    return ret;
+  }
+
+  if (ctx->Break()) {
+    auto ret = make<BreakStmt>();
+    ret->loop = nullptr; // Will be set during semantic analysis
+    return ret;
+  }
+
+  if (ctx->Continue()) {
+    auto ret = make<ContinueStmt>();
+    ret->loop = nullptr; // Will be set during semantic analysis
     return ret;
   }
 
@@ -453,8 +816,12 @@ Ast2Asg::operator()(ast::FunctionDefinitionContext* ctx)
   type->spec = sq.first, type->qual = sq.second;
 
   auto [texp, name] = self(ctx->directDeclarator(), nullptr);
-  auto funcType = make<FunctionType>();
-  funcType->sub = texp;
+  auto funcType = texp->dcst<FunctionType>();
+  if (!funcType) {
+    // 如果 directDeclarator 没有产生 FunctionType，则创建一个
+    funcType = make<FunctionType>();
+    funcType->sub = texp;
+  }
   type->texp = funcType;
   ret->name = std::move(name);
 
@@ -463,7 +830,51 @@ Ast2Asg::operator()(ast::FunctionDefinitionContext* ctx)
   // 函数定义在签名之后就加入符号表，以允许递归调用
   (*mSymtbl)[ret->name] = ret;
 
+  // 为参数创建 VarDecl 并加入符号表
+  size_t paramCount = funcType->params.size();
+  for (size_t i = 0; i < paramCount; ++i) {
+    auto paramDecl = make<VarDecl>();
+    paramDecl->type = funcType->params[i];
+    // 设置参数名并加入符号表
+    if (i < mParamNames.size() && !mParamNames[i].empty()) {
+      paramDecl->name = mParamNames[i];
+      (*mSymtbl)[paramDecl->name] = paramDecl;
+    }
+    ret->params.push_back(paramDecl);
+  }
+
+  // 处理 K&R 风格的 declarationList（如果有）
+  if (auto declList = ctx->declarationList()) {
+    auto decls = self(declList);
+    // K&R 风格：declarationList 中的声明用于补充参数类型信息
+    // 这里简化处理：将声明加入符号表
+    for (auto decl : decls) {
+      (*mSymtbl)[decl->name] = decl;
+    }
+  }
+
   ret->body = self(ctx->compoundStatement());
+
+  return ret;
+}
+
+std::vector<Decl*>
+Ast2Asg::operator()(ast::DeclarationListContext* ctx)
+{
+  std::vector<Decl*> ret;
+
+  // 递归处理：declarationList 可能包含另一个 declarationList
+  if (auto subList = ctx->declarationList()) {
+    ret = self(subList);
+  }
+
+  // 添加当前层的 declaration
+  if (auto decl = ctx->declaration()) {
+    auto sub = self(decl);
+    ret.insert(ret.end(),
+               std::make_move_iterator(sub.begin()),
+               std::make_move_iterator(sub.end()));
+  }
 
   return ret;
 }
@@ -484,9 +895,12 @@ Ast2Asg::operator()(ast::InitDeclaratorContext* ctx, SpecQual sq)
     type->texp = funcType;
 
     fdecl->name = std::move(name);
-    for (auto p : funcType->params) {
+    for (size_t i = 0; i < funcType->params.size(); ++i) {
       auto paramDecl = make<VarDecl>();
-      paramDecl->type = p;
+      paramDecl->type = funcType->params[i];
+      if (i < mParamNames.size() && !mParamNames[i].empty()) {
+        paramDecl->name = mParamNames[i];
+      }
       fdecl->params.push_back(paramDecl);
     }
 
@@ -521,3 +935,4 @@ Ast2Asg::operator()(ast::InitDeclaratorContext* ctx, SpecQual sq)
 }
 
 } // namespace asg
+

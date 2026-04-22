@@ -34,6 +34,16 @@ public:
     ast::DirectDeclaratorContext* ctx,
     TypeExpr* sub);
 
+  // 参数信息：类型和名称
+  using ParamInfo = std::pair<const Type*, std::string>;
+  std::vector<ParamInfo> operator()(ast::ParameterTypeListContext* ctx);
+
+  std::vector<ParamInfo> operator()(ast::ParameterListContext* ctx);
+
+  ParamInfo operator()(ast::ParameterDeclarationContext* ctx);
+
+  std::vector<std::string> operator()(ast::IdentifierListContext* ctx);
+
   //============================================================================
   // 表达式
   //============================================================================
@@ -42,11 +52,23 @@ public:
 
   Expr* operator()(ast::AssignmentExpressionContext* ctx);
 
+  Expr* operator()(ast::LogicalOrExpressionContext* ctx);
+
+  Expr* operator()(ast::LogicalAndExpressionContext* ctx);
+
+  Expr* operator()(ast::EqualityExpressionContext* ctx);
+
+  Expr* operator()(ast::RelationalExpressionContext* ctx);
+
   Expr* operator()(ast::AdditiveExpressionContext* ctx);
+
+  Expr* operator()(ast::MultiplicativeExpressionContext* ctx);
 
   Expr* operator()(ast::UnaryExpressionContext* ctx);
 
   Expr* operator()(ast::PostfixExpressionContext* ctx);
+
+  std::vector<Expr*> operator()(ast::ArgumentExpressionListContext* ctx);
 
   Expr* operator()(ast::PrimaryExpressionContext* ctx);
 
@@ -62,6 +84,10 @@ public:
 
   Stmt* operator()(ast::ExpressionStatementContext* ctx);
 
+  Stmt* operator()(ast::SelectionStatementContext* ctx);
+
+  Stmt* operator()(ast::IterationStatementContext* ctx);
+
   Stmt* operator()(ast::JumpStatementContext* ctx);
 
   //============================================================================
@@ -69,6 +95,8 @@ public:
   //============================================================================
 
   std::vector<Decl*> operator()(ast::DeclarationContext* ctx);
+
+  std::vector<Decl*> operator()(ast::DeclarationListContext* ctx);
 
   FunctionDecl* operator()(ast::FunctionDefinitionContext* ctx);
 
@@ -79,6 +107,9 @@ private:
   Symtbl* mSymtbl{ nullptr };
 
   FunctionDecl* mCurrentFunc{ nullptr };
+
+  // 临时存储函数参数名，用于在函数定义时设置 VarDecl 的名称
+  std::vector<std::string> mParamNames;
 
   template<typename T, typename... Args>
   T* make(Args... args)
