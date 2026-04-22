@@ -38,6 +38,12 @@ private:
 
   // TODO: 添加表达式处理相关声明
 
+  llvm::Value* operator()(asg::BinaryExpr* obj);
+
+  llvm::Value* operator()(asg::ImplicitCastExpr* obj);
+
+  llvm::Value* operator()(asg::DeclRefExpr* obj);
+
   //============================================================================
   // 语句
   //============================================================================
@@ -50,6 +56,10 @@ private:
 
   // TODO: 添加语句处理相关声明
 
+  void operator()(asg::DeclStmt* obj);
+
+  void operator()(asg::ExprStmt* obj);
+
   //============================================================================
   // 声明
   //============================================================================
@@ -59,4 +69,7 @@ private:
   void operator()(asg::FunctionDecl* obj);
 
   // TODO: 添加声明处理相关声明
+
+  void trans_init(llvm::Value* val, asg::Expr* obj);
+  void operator()(asg::VarDecl* obj);
 };

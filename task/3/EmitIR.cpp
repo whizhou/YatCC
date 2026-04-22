@@ -1,6 +1,8 @@
 #include "EmitIR.hpp"
 #include <llvm/Transforms/Utils/ModuleUtils.h>
 
+#include <iostream>
+
 #define self (*this)
 
 using namespace asg;
@@ -12,6 +14,7 @@ EmitIR::EmitIR(Obj::Mgr& mgr, llvm::LLVMContext& ctx, llvm::StringRef mid)
   , mIntTy(llvm::Type::getInt32Ty(ctx))
   , mCurIrb(std::make_unique<llvm::IRBuilder<>>(ctx))
   , mCtorTy(llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), false))
+  , mCurFunc(nullptr)
 {
 }
 
@@ -66,6 +69,16 @@ EmitIR::operator()(Expr* obj)
   // TODO: 在此添加对更多表达式处理的跳转
   if (auto p = obj->dcst<IntegerLiteral>())
     return self(p);
+
+  if (auto p = obj->dcst<DeclRefExpr>())
+    return self(p);
+
+  if (auto p = obj->dcst<ImplicitCastExpr>())
+    return self(p);
+
+  if (auto p = obj->dcst<BinaryExpr>())
+    return self(p);
+
   ABORT();
 }
 
@@ -76,6 +89,56 @@ EmitIR::operator()(IntegerLiteral* obj)
 }
 
 // TODO: 在此添加对更多表达式类型的处理
+
+llvm::Value*
+EmitIR::operator()(BinaryExpr* obj)
+{
+  llvm::Value *lftVal, *rhtVal;
+
+  lftVal = self(obj->lft);
+
+  auto& irb = *mCurIrb;
+  rhtVal = self(obj->rht);
+  switch (obj->op) {
+
+    case BinaryExpr::kAssign: {
+      irb.CreateStore(rhtVal, lftVal);
+      return rhtVal;
+    }
+
+    case BinaryExpr::kAdd:
+      return irb.CreateAdd(lftVal, rhtVal);
+
+    default:
+      ABORT();
+  }
+}
+
+llvm::Value*
+EmitIR::operator()(ImplicitCastExpr* obj)
+{
+  auto sub = self(obj->sub);
+
+  auto& irb = *mCurIrb;
+  switch (obj->kind) {
+    case ImplicitCastExpr::kLValueToRValue: {
+      auto ty = self(obj->sub->type);
+      auto loadVal = irb.CreateLoad(ty, sub);
+      return loadVal;
+    }
+
+    default:
+      ABORT();
+  }
+}
+
+llvm::Value*
+EmitIR::operator()(DeclRefExpr* obj)
+{
+  // 在LLVM IR层面，左值体现为返回指向值的指针
+  // 在ImplicitCastExpr::kLValueToRValue中发射load指令从而变成右值
+  return reinterpret_cast<llvm::Value*>(obj->decl->any);
+}
 
 //==============================================================================
 // 语句
@@ -92,6 +155,12 @@ EmitIR::operator()(Stmt* obj)
   if (auto p = obj->dcst<ReturnStmt>())
     return self(p);
 
+  if (auto p = obj->dcst<DeclStmt>())
+    return self(p);
+
+  if (auto p = obj->dcst<ExprStmt>())
+    return self(p);
+
   ABORT();
 }
 
@@ -103,6 +172,34 @@ EmitIR::operator()(CompoundStmt* obj)
   // TODO: 可以在此添加对符号重名的处理
   for (auto&& stmt : obj->subs)
     self(stmt);
+}
+
+void
+EmitIR::operator()(DeclStmt* obj)
+{
+  /*
+  struct DeclStmt : Stmt
+  {
+    std::vector<Decl*> decls;
+  };
+  */
+
+  for (auto&& decl : obj->decls)
+    self(decl);
+
+}
+
+void
+EmitIR::operator()(ExprStmt* obj)
+{
+  /*
+  struct ExprStmt : Stmt
+  {
+    Expr* expr{ nullptr };
+  };
+  */
+  if (obj->expr != nullptr)
+    self(obj->expr);
 }
 
 void
@@ -130,6 +227,8 @@ void
 EmitIR::operator()(Decl* obj)
 {
   // TODO: 添加变量声明处理的跳转
+  if (auto p = obj->dcst<VarDecl>())
+    return self(p);
 
   if (auto p = obj->dcst<FunctionDecl>())
     return self(p);
@@ -160,10 +259,71 @@ EmitIR::operator()(FunctionDecl* obj)
   // 翻译函数体
   mCurFunc = func;
   self(obj->body);
+  mCurFunc = nullptr;  // 重置 mCurFunc
   auto& exitIrb = *mCurIrb;
 
   if (fty->getReturnType()->isVoidTy())
     exitIrb.CreateRetVoid();
   else
     exitIrb.CreateUnreachable();
+}
+
+void
+EmitIR::trans_init(llvm::Value* val, Expr* obj)
+{
+  auto& irb = *mCurIrb;
+
+  // 仅处理整数字面量的初始化
+  if (auto p = obj->dcst<IntegerLiteral>()) {
+    auto initVal = llvm::ConstantInt::get(self(p->type), p->val);
+    irb.CreateStore(initVal, val);
+    return;
+  }
+
+  // 如果表达式不是整数字面量，则中断编译
+  ABORT();
+}
+
+void
+EmitIR::operator()(VarDecl* obj)
+{
+  /* 实现暂时忽略了 const */
+  // auto ty = llvm::Type::getInt32Ty(mCtx); // 直接使用 LLVM 的 int32 类型
+  auto ty = self(obj->type);
+
+  if (mCurFunc != nullptr) {
+    // 局部变量
+    auto& irb = *mCurIrb;
+    auto alloca = irb.CreateAlloca(ty, nullptr, obj->name);
+
+    obj->any = alloca;
+
+    if (obj->init != nullptr) {
+      trans_init(alloca, obj->init);
+    }
+  }
+  else {
+    // 全局变量
+    auto gvar = new llvm::GlobalVariable(
+      mMod, ty, false, llvm::GlobalVariable::ExternalLinkage, nullptr, obj->name);
+
+    obj->any = gvar;
+
+    // 默认初始化为 0
+    gvar->setInitializer(llvm::ConstantInt::get(ty, 0));
+
+    if (obj->init == nullptr)
+      return;
+
+    // 创建构造函数用于初始化
+    mCurFunc = llvm::Function::Create(
+      mCtorTy, llvm::GlobalVariable::PrivateLinkage, "ctor_" + obj->name, mMod);
+    llvm::appendToGlobalCtors(mMod, mCurFunc, 65535);
+
+    auto entryBb = llvm::BasicBlock::Create(mCtx, "entry", mCurFunc);
+    mCurIrb->SetInsertPoint(entryBb);
+    trans_init(gvar, obj->init);
+    mCurIrb->CreateRet(nullptr);
+    mCurFunc = nullptr;  // 重置 mCurFunc
+  }
 }
