@@ -48,6 +48,12 @@ private:
 
   llvm::Value* operator()(asg::DeclRefExpr* obj);
 
+  llvm::Value* operator()(asg::InitListExpr* obj);
+
+  llvm::Constant* operator()(asg::ImplicitInitExpr* obj);
+
+  llvm::Value* operator()(asg::CallExpr* obj);
+
   //============================================================================
   // 语句
   //============================================================================

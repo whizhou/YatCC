@@ -50,9 +50,22 @@ EmitIR::operator()(const Type* type)
 
   // TODO: 在此添加对指针类型、数组类型和函数类型的处理
 
+  if (auto p = type->texp->dcst<PointerType>()) {
+    auto pointee = self(&subt);
+    return pointee->getPointerTo();
+  }
+
+  if (auto p = type->texp->dcst<ArrayType>()) {
+    auto elemTy = self(&subt);
+    return llvm::ArrayType::get(elemTy, p->len);
+  }
+
   if (auto p = type->texp->dcst<FunctionType>()) {
     std::vector<llvm::Type*> pty;
     // TODO: 在此添加对函数参数类型的处理
+    for (auto param : p->params) {
+      pty.push_back(self(param));
+    }
     return llvm::FunctionType::get(self(&subt), std::move(pty), false);
   }
 
@@ -70,6 +83,9 @@ EmitIR::operator()(Expr* obj)
   if (auto p = obj->dcst<IntegerLiteral>())
     return self(p);
 
+  if (auto p = obj->dcst<InitListExpr>())
+    return self(p);
+
   if (auto p = obj->dcst<DeclRefExpr>())
     return self(p);
 
@@ -83,6 +99,9 @@ EmitIR::operator()(Expr* obj)
     return self(p);
 
   if (auto p = obj->dcst<ParenExpr>())
+    return self(p);
+
+  if (auto p = obj->dcst<CallExpr>())
     return self(p);
 
   ABORT();
@@ -137,10 +156,21 @@ EmitIR::operator()(BinaryExpr* obj)
   llvm::Value *lftVal, *rhtVal;
 
   lftVal = self(obj->lft);
+  rhtVal = self(obj->rht);
 
   auto& irb = *mCurIrb;
-  rhtVal = self(obj->rht);
   switch (obj->op) {
+
+    case BinaryExpr::kIndex: {
+      // 左操作数是指针类型（经过array-to-pointer decay）
+      // GEP需要的是指针所指向的元素类型，而不是指针类型本身
+      Type subt;
+      subt.spec = obj->lft->type->spec;
+      subt.qual = obj->lft->type->qual;
+      subt.texp = obj->lft->type->texp->sub;  // 获取指针指向的类型
+      auto elemTy = self(&subt);
+      return irb.CreateGEP(elemTy, lftVal, rhtVal);
+    }
 
     case BinaryExpr::kAssign: {
       irb.CreateStore(rhtVal, lftVal);
@@ -192,9 +222,29 @@ EmitIR::operator()(ImplicitCastExpr* obj)
       return loadVal;
     }
 
+    case ImplicitCastExpr::kArrayToPointerDecay: {
+      // Array decays to pointer to first element
+      // sub is a pointer to the array, we need to get a pointer to the first element
+      std::vector<llvm::Value *> indices{
+        irb.getInt64(0), irb.getInt64(0)
+      };
+      return irb.CreateGEP(self(obj->sub->type), sub, indices);
+    }
+
+    case ImplicitCastExpr::kFunctionToPointerDecay: {
+      return sub;
+    }
+
     default:
       ABORT();
   }
+}
+
+llvm::Constant*
+EmitIR::operator()(ImplicitInitExpr* obj)
+{
+  // ImplicitInitExpr represents zero-initialization
+  return llvm::Constant::getNullValue(self(obj->type));
 }
 
 llvm::Value*
@@ -203,6 +253,45 @@ EmitIR::operator()(DeclRefExpr* obj)
   // 在LLVM IR层面，左值体现为返回指向值的指针
   // 在ImplicitCastExpr::kLValueToRValue中发射load指令从而变成右值
   return reinterpret_cast<llvm::Value*>(obj->decl->any);
+}
+
+llvm::Value*
+EmitIR::operator()(InitListExpr* obj)
+{
+  /*
+  struct InitListExpr : Expr
+  {
+    std::vector<Expr*> list;
+  };
+  */
+  ABORT();
+}
+
+llvm::Value*
+EmitIR::operator()(asg::CallExpr* obj)
+{
+  /*
+  struct CallExpr : Expr
+  {
+    Expr* head{ nullptr };
+    std::vector<Expr*> args;
+  };
+  */
+  // Get the function pointer
+  auto funcVal = self(obj->head);
+
+  // Evaluate arguments
+  std::vector<llvm::Value*> args;
+  for (auto arg : obj->args) {
+    args.push_back(self(arg));
+  }
+
+  // Create the call instruction
+  auto& irb = *mCurIrb;
+  if (auto func = llvm::dyn_cast<llvm::Function>(funcVal)) {
+    return irb.CreateCall(func, args);
+  }
+  ABORT();
 }
 
 //==============================================================================
@@ -306,6 +395,13 @@ EmitIR::operator()(Decl* obj)
 void
 EmitIR::operator()(FunctionDecl* obj)
 {
+  /*
+  struct FunctionDecl : Decl
+  {
+    std::vector<Decl*> params;
+    CompoundStmt* body{ nullptr };
+  };
+  */
   // 创建函数
   auto fty = llvm::dyn_cast<llvm::FunctionType>(self(obj->type));
   auto func = llvm::Function::Create(
@@ -320,6 +416,23 @@ EmitIR::operator()(FunctionDecl* obj)
   auto& entryIrb = *mCurIrb;
 
   // TODO: 添加对函数参数的处理
+  auto argIter = func->arg_begin();
+  for (auto param : obj->params) {
+    // 设置 LLVM 参数名称
+    argIter->setName(param->name);
+
+    // 为参数创建 alloca，使得参数可以被修改
+    auto ty = self(param->type);
+    auto alloca = entryIrb.CreateAlloca(ty, nullptr, param->name);
+
+    // 将参数值存储到 alloca 中
+    entryIrb.CreateStore(argIter, alloca);
+
+    // 设置 param->any 以便 DeclRefExpr 可以引用
+    param->any = alloca;
+
+    ++argIter;
+  }
 
   // 翻译函数体
   mCurFunc = func;
@@ -338,22 +451,51 @@ EmitIR::trans_init(llvm::Value* val, Expr* obj)
 {
   auto& irb = *mCurIrb;
 
-  // 仅处理整数字面量的初始化
+  // Handle integer literal initialization
   if (auto p = obj->dcst<IntegerLiteral>()) {
     auto initVal = llvm::ConstantInt::get(self(p->type), p->val);
     irb.CreateStore(initVal, val);
     return;
   }
 
-  // 如果表达式不是整数字面量，则中断编译
+  // Handle implicit initialization (zero-init)
+  if (auto p = obj->dcst<ImplicitInitExpr>()) {
+    // auto initVal = self(p);
+    // irb.CreateStore(initVal, val);
+    return;
+  }
+
+  // Handle initializer list for arrays
+  if (auto p = obj->dcst<InitListExpr>()) {
+    auto aty = llvm::dyn_cast<llvm::ArrayType>(self(obj->type));
+    if (!aty) {
+      ABORT();
+    }
+
+    // Initialize each element
+    for (size_t i = 0; i < p->list.size(); ++i) {
+      std::vector<llvm::Value *> indices{
+        irb.getInt64(0), irb.getInt64(i)
+      };
+      auto elemPtr = irb.CreateGEP(aty, val, indices);
+      trans_init(elemPtr, p->list[i]);
+    }
+    return;
+  }
+
+  // Handle other expressions (e.g., array subscript expressions)
+  auto initVal = self(obj);
+  if (initVal) {
+    irb.CreateStore(initVal, val);
+    return;
+  }
+
   ABORT();
 }
 
 void
 EmitIR::operator()(VarDecl* obj)
 {
-  /* 实现暂时忽略了 const */
-  // auto ty = llvm::Type::getInt32Ty(mCtx); // 直接使用 LLVM 的 int32 类型
   auto ty = self(obj->type);
 
   if (mCurFunc != nullptr) {
@@ -364,6 +506,8 @@ EmitIR::operator()(VarDecl* obj)
     obj->any = alloca;
 
     if (obj->init != nullptr) {
+      llvm::Value* zeroInit = llvm::Constant::getNullValue(ty);
+      irb.CreateStore(zeroInit, alloca);
       trans_init(alloca, obj->init);
     }
   }
@@ -375,7 +519,7 @@ EmitIR::operator()(VarDecl* obj)
     obj->any = gvar;
 
     // 默认初始化为 0
-    gvar->setInitializer(llvm::ConstantInt::get(ty, 0));
+    gvar->setInitializer(llvm::Constant::getNullValue(ty));
 
     if (obj->init == nullptr)
       return;
@@ -392,3 +536,4 @@ EmitIR::operator()(VarDecl* obj)
     mCurFunc = nullptr;  // 重置 mCurFunc
   }
 }
+
