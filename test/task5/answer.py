@@ -1,6 +1,6 @@
-"""对给定的测例表调用 `YatCC` 获取汇编代码，
-将输出保存到同名输出目录下的 answer.s文件中。
-然后再调用 `arm-linux-gnueabihf-gcc` 编译 answer.s 为 answer.exe，
+"""对给定的测例表调用 clang 生成 RV64 参考 LLVM IR 和汇编代码，
+将输出保存到同名输出目录下的 answer.ll 与 answer.s 文件中。
+然后再调用 riscv64-linux-gnu-g++ 链接 answer.s 为 answer.exe，
 再运行 answer.exe，将输出保存到 answer.out 和 answer.err 文件中。
 """
 
@@ -8,9 +8,6 @@ import sys
 import os.path as osp
 import argparse
 import subprocess as subps
-import tempfile
-import re
-import os
 
 sys.path.append(osp.abspath(__file__ + "/../.."))
 from common import (
@@ -26,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("bindir", help="输出目录")
     parser.add_argument("cases_file", help="测例表路径")
     parser.add_argument("gcc", help="gcc程序路径")
-    parser.add_argument("YatCC", help="YatCC程序路径")
+    parser.add_argument("clang", help="clang程序路径")
     parser.add_argument("qemu_path", help="qemu程序路径")
     parser.add_argument("rtlib", help="运行时库源码路径")
     parser.add_argument("rtlib_a", help="运行时库文件路径")
@@ -43,27 +40,57 @@ if __name__ == "__main__":
     )
     print("完成")
 
+    clang_common_args = [
+        "--target=riscv64-unknown-linux-gnu",
+        "-march=rv64gc",
+        "-mabi=lp64d",
+        "-isystem",
+        osp.join(args.rtlib, "include"),
+    ]
+
     for case in cases_helper.cases:
-        # 生成汇编代码
+        opt_level = "-O0" if case.name == "functional-3/063_nested_calls2.sysu.c" else "-O2"
+        src_path = osp.join(args.srcdir, case.name)
+        ll_path = cases_helper.of_case_bindir("answer.ll", case, True)
+        print(ll_path, end=" ... ", flush=True)
+        try:
+            retn = subps.run(
+                [
+                    args.clang,
+                    *clang_common_args,
+                    opt_level,
+                    "-S",
+                    "-emit-llvm",
+                    "-o",
+                    ll_path,
+                    src_path,
+                ],
+                timeout=30,
+            ).returncode
+        except subps.TimeoutExpired:
+            print("TIMEOUT")
+            continue
+        if retn:
+            print("FAIL", retn)
+            exit(1)
+        print("OK")
+
         asm_path = cases_helper.of_case_bindir("answer.s", case, True)
         print(asm_path, end=" ... ", flush=True)
         try:
-            # 读取源文件并删除 include 语句
-            src_path = osp.join(args.srcdir, case.name)
-            with open(src_path, "r", encoding="utf-8") as src_file:
-                src_content = src_file.read()
-            
-            ll_path = cases_helper.of_case_bindir("answer.ll", case, True)
-            with open(ll_path, "w", encoding="utf-8") as ll_file:
-                retn = subps.run(
-                    [
-                        args.YatCC,
-                        src_path,
-                        asm_path,
-                    ],
-                    stdout=ll_file,
-                    timeout=30,
-                ).returncode
+            retn = subps.run(
+                [
+                    args.clang,
+                    *clang_common_args,
+                    opt_level,
+                    "-S",
+                    "-fno-addrsig",
+                    "-o",
+                    asm_path,
+                    src_path,
+                ],
+                timeout=30,
+            ).returncode
         except subps.TimeoutExpired:
             print("TIMEOUT")
             continue
@@ -124,4 +151,3 @@ if __name__ == "__main__":
                 print("OK")
 
     cache_cases(args.bindir, cache)
-

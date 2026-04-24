@@ -1,0 +1,41 @@
+This software is made available ONLY under the terms of BOTH of the following
+licenses simultaneously. You must comply with ALL terms and conditions of both
+licenses to obtain any rights to use, copy, modify, or distribute this software.
+
+-------------------------------------------------------------------------------
+License 1: GNU General Public License Version 3
+-------------------------------------------------------------------------------
+
+The full text of the GNU General Public License Version 3 is provided in the
+file "LICENSE-GPL.txt" and is incorporated herein by reference.
+
+-------------------------------------------------------------------------------
+License 2: Supplementary Restrictive License
+-------------------------------------------------------------------------------
+
+The full text of the Supplementary Restrictive License is provided in the file
+"LICENSE-SUPPLEMENTARY.txt" and is incorporated herein by reference. This
+license imposes additional restrictions, including but not limited to a
+prohibition on the use of this software for artificial intelligence training.
+
+-------------------------------------------------------------------------------
+IMPORTANT: CONJUNCTIVE APPLICATION
+-------------------------------------------------------------------------------
+
+Permission to use, copy, modify, and/or distribute this software is granted ONLY
+on the condition that you accept AND comply with BOTH licenses simultaneously.
+There is NO OPTION to choose only one of the licenses. Any use of this software
+in violation of any term of either license is strictly prohibited and will
+result in automatic termination of all rights granted herein.
+
+If any provision of the Supplementary Restrictive License is held to be
+unenforceable or in conflict with the GNU General Public License Version 3,
+the remaining provisions of both licenses shall remain in full force and effect,
+and the conflicting provision shall be interpreted, to the maximum extent
+permitted by law, in a manner that preserves the original intent of the
+copyright holder while maintaining compliance with the GPLv3.
+
+By using this software, you represent and warrant that you have read, understood,
+and agree to be bound by all terms and conditions of BOTH licenses.
+
+Copyright (C) [YEAR] [YOUR NAME]

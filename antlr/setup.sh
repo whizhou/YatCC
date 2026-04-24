@@ -25,5 +25,7 @@ unzip cpp-runtime.zip -d source
 mkdir build install
 cmake source -B build -G Ninja \
   -DCMAKE_INSTALL_PREFIX=$(realpath install) \
-  -DANTLR4_INSTALL=ON
+  -DANTLR4_INSTALL=ON \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
 cmake --build build --target install

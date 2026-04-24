@@ -1,0 +1,56 @@
+SUPPLEMENTARY RESTRICTIVE LICENSE
+
+Version 1.0, [DATE]
+
+Copyright (C) [YEAR] [YOUR NAME]
+
+1. Relationship to GPLv3
+   This license ("Supplementary License") is an independent, stand-alone license
+   agreement that must be accepted and complied with in addition to the GNU
+   General Public License Version 3 ("GPLv3"). The permissions granted herein
+   are contingent upon the licensee's simultaneous compliance with the GPLv3.
+   No rights are granted under the GPLv3 alone.
+
+2. Prohibition on AI Training
+   The Software (which term includes, without limitation, its source code,
+   object code, documentation, input prompts, output responses, logs, and any
+   modifications or derivative works thereof) shall not be used, in whole or in
+   part, for the purpose of training, fine-tuning, validating, or otherwise
+   improving any machine learning model, deep learning model, large language
+   model, diffusion model, or any other artificial intelligence system,
+   whether supervised, unsupervised, or reinforcement learning. This prohibition
+   applies regardless of whether the training is conducted for commercial or
+   non-commercial purposes, and includes the use of the Software to generate
+   synthetic training data.
+
+3. No Waiver of Copyleft
+   Nothing in this Supplementary License shall be interpreted as waiving,
+   limiting, or modifying any of the copyleft requirements of the GPLv3,
+   including but not limited to the obligation to provide corresponding source
+   code when conveying the Software in object code form.
+
+4. Automatic Termination
+   Any violation of Section 2 of this Supplementary License shall result in the
+   immediate and automatic termination of all rights granted under BOTH this
+   Supplementary License AND the GPLv3 with respect to the violating party.
+   Upon termination, the violating party must cease all use and distribution
+   of the Software and destroy all copies in their possession.
+
+5. Severability and Interpretation
+   If any provision of this Supplementary License is found to be unenforceable
+   or in conflict with the GPLv3, such provision shall be modified only to the
+   minimum extent necessary to render it enforceable and compatible with the
+   GPLv3, and the remainder of this Supplementary License shall continue in
+   full force and effect. The copyright holder's intent that the AI training
+   prohibition be strictly enforced shall be given the fullest possible effect
+   consistent with applicable law.
+
+6. Disclaimer of Warranty and Limitation of Liability
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF,
+   OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE. THIS DISCLAIMER IS IN ADDITION TO THE DISCLAIMER CONTAINED IN
+   SECTIONS 15 AND 16 OF THE GPLv3.

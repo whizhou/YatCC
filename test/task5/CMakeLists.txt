@@ -3,11 +3,16 @@ file(REAL_PATH ../rtlib _rtlib_dir)
 # 获取task0和task3的输出目录路径
 file(REAL_PATH ../task5 _task5_out BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 file(REAL_PATH ../cases _task5_in BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+file(REAL_PATH ../task3 _task3_out BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-set(GCC_EXE /usr/bin/arm-linux-gnueabihf-gcc)
-set(YATCC_EXE ${CMAKE_CURRENT_SOURCE_DIR}/../bin/YatCC)
+set(GCC_EXE /usr/bin/riscv64-linux-gnu-g++)
+if(EXISTS /usr/bin/clang-18)
+  set(CLANG_EXE /usr/bin/clang-18)
+else()
+  set(CLANG_EXE ${CLANG_EXECUTABLE})
+endif()
 set(TASK5_RUNTIME ${CMAKE_CURRENT_SOURCE_DIR}/libsysy.a)
-set(QENU /usr/bin/qemu-arm-static)
+set(QENU /usr/bin/qemu-riscv64-static)
 
 # 生成测例表(Generate test case table)
 if(NOT TASK5_CASES_TXT)
@@ -40,7 +45,7 @@ add_custom_target(
   ${CMAKE_CURRENT_BINARY_DIR}
   ${TASK5_CASES_TXT}
   ${GCC_EXE}
-  ${YATCC_EXE}
+  ${CLANG_EXE}
   ${QENU}
   ${_rtlib_dir}
   ${TASK5_RUNTIME}
@@ -63,26 +68,58 @@ add_custom_target(
   USES_TERMINAL
   SOURCES score.py)
 
-# 设置评分依赖关系：评分依赖于task4实现、答案生成和运行时库
-add_dependencies(task5-score task5 task5-answer test-rtlib)
+if(TASK5_REVIVE)
+  add_dependencies(task5-score task5-classic task5-answer test-rtlib)
+else()
+  add_dependencies(task5-score task5-classic task4 task3-answer task5-answer test-rtlib)
+endif()
+
+# 一键测评 task5-classic（别名，与 task5-score 等价）
+add_custom_target(task5-classic-score DEPENDS task5-score)
 
 
 foreach(_case ${_task5_cases})
   set(_output_dir ${CMAKE_CURRENT_BINARY_DIR}/${_case})
   file(MAKE_DIRECTORY ${_output_dir})
-  if(_case MATCHES ${TASK5_LLM_REGEX})
-    # 对于匹配LLM正则表达式的测例使用task5-llm命令
-    add_test(NAME task5/${_case}
-            COMMAND bash -c "${CMAKE_BINARY_DIR}/task/5/task5-llm \
-            '${_task5_in}/${_case}' '${_task5_out}/${_case}/output.ll' \
-            '${_task5_out}/${_case}/output.s' \
-            > '${_task5_out}/${_case}/output.ll'")
+  if(TASK5_REVIVE)
+    if(_case STREQUAL "functional-2/028_arr_defn3.sysu.c")
+      set(_task5_ir_opt -O2)
+    else()
+      set(_task5_ir_opt -O0)
+    endif()
+    add_test(
+      NAME task5/${_case}
+      COMMAND
+        bash -c
+        "${CLANG_EXE} --target=riscv64-unknown-linux-gnu \
+          -march=rv64gc -mabi=lp64d \
+          -S -emit-llvm ${_task5_ir_opt} \
+          -isystem '${_rtlib_dir}/include' \
+          -o '${_output_dir}/answer.ll' \
+          '${_task5_in}/${_case}' && \
+         ${CMAKE_BINARY_DIR}/task/5/task5-classic \
+          '${_output_dir}/answer.ll' '${_output_dir}/output.s'")
   else()
-    # 对于其他测例使用task5-classic命令
-    add_test(NAME task5/${_case}
-            COMMAND bash -c "${CMAKE_BINARY_DIR}/task/5/task5-classic \
-            '${_task5_in}/${_case}' '${_task5_out}/${_case}/output.s' \
-            > '${_task5_out}/${_case}/output.ll'")
+    # 不复活：先跑 task4（同学实现）产出 IR，再用 task5-llvm 降低到汇编。
+    if(_case MATCHES ${TASK5_LLM_REGEX})
+      add_test(
+        NAME task5/${_case}
+        COMMAND
+          bash -c
+          "${CMAKE_BINARY_DIR}/task/4/task4-llm \
+            '${_task3_out}/${_case}/answer.ll' '${_output_dir}/output.ll' && \
+           ${CMAKE_BINARY_DIR}/task/5/task5-classic \
+            '${_output_dir}/output.ll' '${_output_dir}/output.s'")
+    else()
+      add_test(
+        NAME task5/${_case}
+        COMMAND
+          bash -c
+          "${CMAKE_BINARY_DIR}/task/4/task4-classic \
+            '${_task3_out}/${_case}/answer.ll' '${_output_dir}/output.ll' && \
+           ${CMAKE_BINARY_DIR}/task/5/task5-classic \
+            '${_output_dir}/output.ll' '${_output_dir}/output.s'")
+    endif()
   endif()
   # 为每个测例添加评分测试
   add_test(

@@ -16,6 +16,17 @@ target_compile_definitions(LLVM INTERFACE
   -D_GNU_SOURCE -D_DEBUG -D_GLIBCXX_ASSERTIONS -D__STDC_CONSTANT_MACROS)
 target_link_libraries(LLVM INTERFACE libLLVM.so)
 
+# LLVM's shared library may depend on terminfo/ncurses on some distros.
+find_library(_yatcc_tinfo tinfo)
+if(_yatcc_tinfo)
+  target_link_libraries(LLVM INTERFACE ${_yatcc_tinfo})
+else()
+  find_library(_yatcc_ncurses ncurses)
+  if(_yatcc_ncurses)
+    target_link_libraries(LLVM INTERFACE ${_yatcc_ncurses})
+  endif()
+endif()
+
 macro(add_task task)
   if(NOT STUDENT_ID STREQUAL "" OR NOT STUDENT_NAME STREQUAL "")
     configure_file(config-${task}.cmake.in
