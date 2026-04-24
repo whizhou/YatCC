@@ -16,7 +16,8 @@ rm -rf llvm clang cmake build install
 
 arch=$(uname -m)
 if [ "$arch" = "x86_64" ]; then
-  targets="X86"
+  # Build host (X86) and RISC-V backends so task5 can emit RV64.
+  targets="X86;RISCV"
 elif [ "$arch" = "aarch64" ]; then
   targets="AArch64"
 else
@@ -52,5 +53,6 @@ cmake llvm -B build -G Ninja \
   -DLLVM_USE_LINKER=lld \
   -DLLVM_INCLUDE_BENCHMARKS=OFF \
   -DLLVM_INCLUDE_EXAMPLES=OFF \
-  -DLLVM_INCLUDE_TESTS=OFF
-cmake --build build --target install
+  -DLLVM_INCLUDE_TESTS=OFF \
+  -DLLVM_PARALLEL_COMPILE_JOBS=32
+cmake --build build --target install -j 32

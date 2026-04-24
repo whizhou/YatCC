@@ -1,48 +1,31 @@
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/frontEnd
-    ${CMAKE_CURRENT_SOURCE_DIR}/backEnd
-    ${CMAKE_CURRENT_SOURCE_DIR}/middleEnd
-    ${CMAKE_CURRENT_SOURCE_DIR}/opt
-    ${CMAKE_CURRENT_SOURCE_DIR}/backEnd/asm
-    ${ANTLR4_INCLUDE_DIRS}
-)
+# task5-classic: LLVM IR -> RV64 assembly lowering (student-implemented).
 
-file(GLOB_RECURSE ALL_SOURCES 
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
-)
-list(FILTER ALL_SOURCES EXCLUDE REGEX ".*llm/.*")
-set(_classic_src ${ALL_SOURCES})
+set(TASK5_LLVM_RISCV_SOURCE_DIR "${YATCC_LLVM_SOURCE_DIR}/lib/Target/RISCV")
+set(TASK5_LLVM_RISCV_GEN_DIR "${YATCC_LLVM_DIR}/task5/include")
 
-message(STATUS "Found source files:")
-foreach(SOURCE_FILE ${_classic_src})
-    message(STATUS "  ${SOURCE_FILE}")
-endforeach()
+# if(NOT EXISTS "${TASK5_LLVM_RISCV_SOURCE_DIR}/RISCV.td")
+#   message(
+#     FATAL_ERROR
+#       "Task5 requires the LLVM RISC-V source tree under '${TASK5_LLVM_RISCV_SOURCE_DIR}'. "
+#       "Please ensure YatCC_LLVM_DIR points to a full LLVM setup.")
+# endif()
 
-add_executable(task5-classic ${_classic_src})
+# if(NOT EXISTS "${TASK5_LLVM_RISCV_GEN_DIR}/RISCVGenRegisterInfo.inc"
+#    OR NOT EXISTS "${TASK5_LLVM_RISCV_GEN_DIR}/RISCVGenInstrInfo.inc")
+#   message(
+#     FATAL_ERROR
+#       "Task5 requires LLVM TableGen outputs under '${TASK5_LLVM_RISCV_GEN_DIR}'. "
+#       "Please run ./llvm/setup.sh or rebuild the devcontainer image with Task5 LLVM artifacts.")
+# endif()
 
+add_executable(task5-classic main.cpp EmitMIR.cpp EmitAsm.cpp AllocReg.cpp)
 target_include_directories(task5-classic PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(task5-classic PRIVATE ${LLVM_INCLUDE_DIRS})
-
-target_link_libraries(task5-classic antlr4_static)
+target_include_directories(task5-classic PRIVATE
+  ${TASK5_LLVM_RISCV_SOURCE_DIR}
+  ${TASK5_LLVM_RISCV_SOURCE_DIR}/MCTargetDesc
+  ${TASK5_LLVM_RISCV_GEN_DIR}
+)
 target_link_libraries(task5-classic LLVM)
 
-file(GLOB_RECURSE _llm_src 
-    "${CMAKE_CURRENT_SOURCE_DIR}/llm/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/llm/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/llm/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/llm/*.hpp"
-)
-
-add_executable(task5-llm ${_llm_src} ${_classic_src})
-target_include_directories(task5-llm PRIVATE . ${CMAKE_CURRENT_BINARY_DIR} llm)
-target_include_directories(task5-llm PRIVATE ${LLVM_INCLUDE_DIRS})
-target_link_libraries(task5-llm LLVM pybind11::embed antlr4_static)
-
-target_compile_definitions(task5-llm
-                           PRIVATE TASK5_LLM TASK5_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-
-add_custom_target(task5 DEPENDS task5-classic task5-llm)
+add_custom_target(task5 DEPENDS task5-classic)

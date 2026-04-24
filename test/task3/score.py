@@ -222,6 +222,7 @@ if __name__ == "__main__":
     parser.add_argument("comp_path", type=str, help="编译器路径")
     parser.add_argument("rtlib_path", type=str, help="运行时库路径")
     parser.add_argument("--single", type=str, help="运行单个测例")
+    parser.add_argument("--diy-mod", action="store_true", help="diy 模式")
     args = parser.parse_args()
     print_parsed_args(parser, args)
 
@@ -235,6 +236,10 @@ if __name__ == "__main__":
 
     COMP_PATH = args.comp_path
     RTLIB_PATH = args.rtlib_path
+
+    ctest_cases = "^task3/" if not args.diy_mod else "^task3-diy/"
+    # diy 模式下 bindir 是输出子目录，CTestTestfile.cmake 在其父目录中
+    ctest_dir = osp.dirname(args.bindir) if args.diy_mod else args.bindir
 
     if case_name := args.single:
         for case in cases_helper.cases:
@@ -254,9 +259,9 @@ if __name__ == "__main__":
                 [
                     args.ctest_exe,
                     "--test-dir",
-                    args.bindir,
+                    ctest_dir,
                     "-R",
-                    "^task3/" + case_name,
+                    ctest_cases + case_name,
                     # 注意这里一定不能写成 test3/，否则会无限递归下去
                 ],
                 stdout=out,
@@ -274,7 +279,7 @@ if __name__ == "__main__":
         print("运行 CTest 以得到结果...", end="", flush=True)
         with out, err:
             subps.run(
-                [args.ctest_exe, "--test-dir", args.bindir, "-R", "^task3/.*"],
+                [args.ctest_exe, "--test-dir", ctest_dir, "-R", ctest_cases + ".*"],
                 stdout=out,
                 stderr=err,
             )
