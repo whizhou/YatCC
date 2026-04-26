@@ -22,6 +22,11 @@ private:
   llvm::Function* mCurFunc;
   std::unique_ptr<llvm::IRBuilder<>> mCurIrb;
 
+  /// 当前循环的结束块（用于 break 跳转）
+  llvm::BasicBlock* mCurLoopEndBB{ nullptr };
+  /// 当前循环的条件块（用于 continue 跳转）
+  llvm::BasicBlock* mCurLoopCondBB{ nullptr };
+
   //============================================================================
   // 类型
   //============================================================================
@@ -69,6 +74,14 @@ private:
   void operator()(asg::DeclStmt* obj);
 
   void operator()(asg::ExprStmt* obj);
+
+  void operator()(asg::IfStmt* obj);
+
+  void operator()(asg::WhileStmt* obj);
+
+  void operator()(asg::BreakStmt* obj);
+
+  void operator()(asg::ContinueStmt* obj);
 
   //============================================================================
   // 声明

@@ -38,6 +38,8 @@ EmitIR::operator()(const Type* type)
       case Type::Spec::kInt:
         return llvm::Type::getInt32Ty(mCtx);
       // TODO: 在此添加对更多基础类型的处理
+      case Type::Spec::kVoid:
+        return llvm::Type::getVoidTy(mCtx);
       default:
         ABORT();
     }
@@ -144,6 +146,14 @@ EmitIR::operator()(UnaryExpr* obj)
     
     case UnaryExpr::kNeg:
       return irb.CreateNeg(sub);
+    
+    case UnaryExpr::kNot: {
+      // Logical NOT (!): result = (sub == 0) ? 1 : 0
+      auto zero = llvm::ConstantInt::get(sub->getType(), 0);
+      auto isZero = irb.CreateICmpEQ(sub, zero);
+      return isZero;
+      // return irb.CreateZExt(isZero, sub->getType());
+    }
 
     default:
       ABORT();
@@ -153,15 +163,42 @@ EmitIR::operator()(UnaryExpr* obj)
 llvm::Value*
 EmitIR::operator()(BinaryExpr* obj)
 {
-  llvm::Value *lftVal, *rhtVal;
+  /*
+  struct BinaryExpr : Expr
+  {
+    enum Op
+    {
+      kINVALID,
+      kMul,
+      kDiv,
+      kMod,
+      kAdd,
+      kSub,
+      kGt,
+      kLt,
+      kGe,
+      kLe,
+      kEq,
+      kNe,
+      kAnd,
+      kOr,
+      kAssign,
+      kComma,
+      kIndex,
+    };
 
-  lftVal = self(obj->lft);
-  rhtVal = self(obj->rht);
+    Op op{ kINVALID };
+    Expr *lft{ nullptr }, *rht{ nullptr };
+  };
+  */
+  llvm::Value *lftVal, *rhtVal;
 
   auto& irb = *mCurIrb;
   switch (obj->op) {
 
     case BinaryExpr::kIndex: {
+      lftVal = self(obj->lft);
+      rhtVal = self(obj->rht);
       // 左操作数是指针类型（经过array-to-pointer decay）
       // GEP需要的是指针所指向的元素类型，而不是指针类型本身
       Type subt;
@@ -173,24 +210,141 @@ EmitIR::operator()(BinaryExpr* obj)
     }
 
     case BinaryExpr::kAssign: {
+      lftVal = self(obj->lft);
+      rhtVal = self(obj->rht);
       irb.CreateStore(rhtVal, lftVal);
       return rhtVal;
     }
 
-    case BinaryExpr::kAdd:
-      return irb.CreateAdd(lftVal, rhtVal);
+    case BinaryExpr::kAdd: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateAdd(lft, rht);
+    }
 
-    case BinaryExpr::kSub:
-      return irb.CreateSub(lftVal, rhtVal);
+    case BinaryExpr::kSub: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateSub(lft, rht);
+    }
 
-    case BinaryExpr::kMul:
-      return irb.CreateMul(lftVal, rhtVal);
+    case BinaryExpr::kMul: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateMul(lft, rht);
+    }
 
-    case BinaryExpr::kDiv:
-      return irb.CreateSDiv(lftVal, rhtVal);
+    case BinaryExpr::kDiv: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateSDiv(lft, rht);
+    }
 
-    case BinaryExpr::kMod:
-      return irb.CreateSRem(lftVal, rhtVal);
+    case BinaryExpr::kMod: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateSRem(lft, rht);
+    }
+
+    case BinaryExpr::kGt: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateICmpSGT(lft, rht);
+    }
+
+    case BinaryExpr::kLt: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateICmpSLT(lft, rht);
+    }
+
+    case BinaryExpr::kGe: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateICmpSGE(lft, rht);
+    }
+
+    case BinaryExpr::kLe: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateICmpSLE(lft, rht);
+    }
+
+    case BinaryExpr::kEq: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateICmpEQ(lft, rht);
+    }
+
+    case BinaryExpr::kNe: {
+      auto lft = self(obj->lft);
+      auto rht = self(obj->rht);
+      return irb.CreateICmpNE(lft, rht);
+    }
+
+    case BinaryExpr::kAnd: {
+      // Logical AND (&&) with short-circuit evaluation:
+      //   result = lft && rht
+      //   if lft is false → result is false (skip evaluating rht)
+      //   if lft is true  → evaluate rht, result = truth(rht)
+      auto lftVal = self(obj->lft);
+      auto lftIsTrue = irb.CreateICmpNE(lftVal, llvm::ConstantInt::get(lftVal->getType(), 0));
+      auto* lftBB = irb.GetInsertBlock();
+
+      auto* rhtBB  = llvm::BasicBlock::Create(mCtx, "and.rht",  mCurFunc);
+      auto* mergeBB = llvm::BasicBlock::Create(mCtx, "and.end", mCurFunc);
+
+      irb.CreateCondBr(lftIsTrue, rhtBB, mergeBB);
+
+      // Emit right-hand side block
+      irb.SetInsertPoint(rhtBB);
+      auto rhtVal = self(obj->rht);
+      // The rht expression may have created new basic blocks (e.g., nested
+      // logical operators). Capture the actual block where rhtIsTrue lives,
+      // which may differ from rhtBB.
+      auto* rhtTrueBB = irb.GetInsertBlock();
+      auto rhtIsTrue = irb.CreateICmpNE(rhtVal, llvm::ConstantInt::get(rhtVal->getType(), 0));
+      irb.CreateBr(mergeBB);
+
+      // Emit merge block with PHI node
+      irb.SetInsertPoint(mergeBB);
+      auto* phi = irb.CreatePHI(irb.getInt1Ty(), 2, "and.phi");
+      phi->addIncoming(irb.getInt1(0), lftBB);      // lft was false → result = 0
+      phi->addIncoming(rhtIsTrue, rhtTrueBB);       // lft was true  → result = truth(rht)
+      return phi;
+    }
+
+    case BinaryExpr::kOr: {
+      // Logical OR (||) with short-circuit evaluation:
+      //   result = lft || rht
+      //   if lft is true  → result is true (skip evaluating rht)
+      //   if lft is false → evaluate rht, result = truth(rht)
+      auto lftVal = self(obj->lft);
+      auto lftIsTrue = irb.CreateICmpNE(lftVal, llvm::ConstantInt::get(lftVal->getType(), 0));
+      auto* lftBB = irb.GetInsertBlock();
+
+      auto* rhtBB  = llvm::BasicBlock::Create(mCtx, "or.rht",  mCurFunc);
+      auto* mergeBB = llvm::BasicBlock::Create(mCtx, "or.end", mCurFunc);
+
+      irb.CreateCondBr(lftIsTrue, mergeBB, rhtBB);
+
+      // Emit right-hand side block
+      irb.SetInsertPoint(rhtBB);
+      auto rhtVal = self(obj->rht);
+      // The rht expression may have created new basic blocks (e.g., nested
+      // logical operators). Capture the actual block where rhtIsTrue lives,
+      // which may differ from rhtBB.
+      auto* rhtTrueBB = irb.GetInsertBlock();
+      auto rhtIsTrue = irb.CreateICmpNE(rhtVal, llvm::ConstantInt::get(rhtVal->getType(), 0));
+      irb.CreateBr(mergeBB);
+
+      // Emit merge block with PHI node
+      irb.SetInsertPoint(mergeBB);
+      auto* phi = irb.CreatePHI(irb.getInt1Ty(), 2, "or.phi");
+      phi->addIncoming(irb.getInt1(1), lftBB);       // lft was true  → result = 1
+      phi->addIncoming(rhtIsTrue, rhtTrueBB);        // lft was false → result = truth(rht)
+      return phi;
+    }
 
     default:
       ABORT();
@@ -315,10 +469,167 @@ EmitIR::operator()(Stmt* obj)
   if (auto p = obj->dcst<ExprStmt>())
     return self(p);
 
+  if (auto p = obj->dcst<IfStmt>())
+    return self(p);
+
+  if (auto p = obj->dcst<WhileStmt>())
+    return self(p);
+
+  if (auto p = obj->dcst<BreakStmt>())
+    return self(p);
+
+  if (auto p = obj->dcst<ContinueStmt>())
+    return self(p);
+
+  if (auto p = obj->dcst<NullStmt>())
+    return;
+
   ABORT();
 }
 
 // TODO: 在此添加对更多Stmt类型的处理
+
+void
+EmitIR::operator()(asg::IfStmt* obj)
+{
+  /*
+  struct IfStmt : Stmt
+  {
+    Expr* cond{ nullptr };
+    Stmt *then{ nullptr }, *else_{ nullptr };
+  };
+  */
+  auto& irb = *mCurIrb;
+
+  auto condVal = self(obj->cond);
+  // 确保条件值为 i1
+  auto condIsTrue = irb.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0));
+
+  auto* thenBB = llvm::BasicBlock::Create(mCtx, "if.then", mCurFunc);
+  auto* mergeBB = llvm::BasicBlock::Create(mCtx, "if.end", mCurFunc);
+
+  if (obj->else_ != nullptr) {
+    auto* elseBB = llvm::BasicBlock::Create(mCtx, "if.else", mCurFunc);
+    irb.CreateCondBr(condIsTrue, thenBB, elseBB);
+
+    // Emit 'then' block
+    irb.SetInsertPoint(thenBB);
+    self(obj->then);
+    // 检查当前插入点所在块是否有终止指令（如 ret）
+    // 使用 GetInsertBlock() 而非 thenBB，因为子语句（如 ReturnStmt）
+    // 可能已将插入点移动到新块
+    if (!irb.GetInsertBlock()->getTerminator())
+      irb.CreateBr(mergeBB);
+
+    // Emit 'else' block
+    irb.SetInsertPoint(elseBB);
+    self(obj->else_);
+    // 检查当前插入点所在块是否有终止指令
+    // 使用 GetInsertBlock() 而非 elseBB，因为 else 子句可能是嵌套的
+    // IfStmt（else-if），其执行后插入点位于内层 merge 块
+    if (!irb.GetInsertBlock()->getTerminator())
+      irb.CreateBr(mergeBB);
+  } else {
+    irb.CreateCondBr(condIsTrue, thenBB, mergeBB);
+
+    // Emit 'then' block
+    irb.SetInsertPoint(thenBB);
+    self(obj->then);
+    // 检查当前插入点所在块是否有终止指令
+    if (!irb.GetInsertBlock()->getTerminator())
+      irb.CreateBr(mergeBB);
+  }
+
+  // Emit 'merge' block
+  irb.SetInsertPoint(mergeBB);
+}
+
+void
+EmitIR::operator()(asg::WhileStmt* obj)
+{
+  /*
+  struct WhileStmt : Stmt
+  {
+    Expr* cond{ nullptr };
+    Stmt* body{ nullptr };
+  };
+  */
+  auto& irb = *mCurIrb;
+
+  // Create basic blocks for the while loop
+  auto* condBB = llvm::BasicBlock::Create(mCtx, "while.cond", mCurFunc);
+  auto* bodyBB = llvm::BasicBlock::Create(mCtx, "while.body", mCurFunc);
+  auto* endBB  = llvm::BasicBlock::Create(mCtx, "while.end", mCurFunc);
+
+  // Save current loop context for break/continue
+  auto* savedEndBB = mCurLoopEndBB;
+  auto* savedCondBB = mCurLoopCondBB;
+  mCurLoopEndBB = endBB;
+  mCurLoopCondBB = condBB;
+
+  // Branch to condition check block
+  irb.CreateBr(condBB);
+
+  // Emit condition block
+  irb.SetInsertPoint(condBB);
+  auto condVal = self(obj->cond);
+  auto condIsTrue = irb.CreateICmpNE(condVal, llvm::ConstantInt::get(condVal->getType(), 0));
+  irb.CreateCondBr(condIsTrue, bodyBB, endBB);
+
+  // Emit body block
+  irb.SetInsertPoint(bodyBB);
+  self(obj->body);
+  // If the body doesn't have a terminator (e.g., return/break), branch back to cond
+  if (!irb.GetInsertBlock()->getTerminator())
+    irb.CreateBr(condBB);
+
+  // Restore previous loop context
+  mCurLoopEndBB = savedEndBB;
+  mCurLoopCondBB = savedCondBB;
+
+  // Emit end block (after the loop)
+  irb.SetInsertPoint(endBB);
+}
+
+void
+EmitIR::operator()(asg::BreakStmt* obj)
+{
+  /*
+  struct BreakStmt : Stmt
+  {
+    Stmt* loop{ nullptr };
+  };
+  */
+  auto& irb = *mCurIrb;
+
+  // Branch to the end of the current loop
+  irb.CreateBr(mCurLoopEndBB);
+
+  // Create an unreachable block after break to absorb subsequent code
+  auto* unreachableBB = llvm::BasicBlock::Create(mCtx, "break.after", mCurFunc);
+  irb.SetInsertPoint(unreachableBB);
+  irb.CreateUnreachable();
+}
+
+void
+EmitIR::operator()(asg::ContinueStmt* obj)
+{
+  /*
+  struct ContinueStmt : Stmt
+  {
+    Stmt* loop{ nullptr };
+  };
+  */
+  auto& irb = *mCurIrb;
+
+  // Branch to the condition block of the current loop
+  irb.CreateBr(mCurLoopCondBB);
+
+  // Create an unreachable block after continue to absorb subsequent code
+  auto* unreachableBB = llvm::BasicBlock::Create(mCtx, "continue.after", mCurFunc);
+  irb.SetInsertPoint(unreachableBB);
+  irb.CreateUnreachable();
+}
 
 void
 EmitIR::operator()(CompoundStmt* obj)
@@ -371,6 +682,7 @@ EmitIR::operator()(ReturnStmt* obj)
 
   auto exitBb = llvm::BasicBlock::Create(mCtx, "return_exit", mCurFunc);
   mCurIrb->SetInsertPoint(exitBb);
+  mCurIrb->CreateUnreachable();
 }
 
 //==============================================================================
@@ -440,10 +752,13 @@ EmitIR::operator()(FunctionDecl* obj)
   mCurFunc = nullptr;  // 重置 mCurFunc
   auto& exitIrb = *mCurIrb;
 
-  if (fty->getReturnType()->isVoidTy())
-    exitIrb.CreateRetVoid();
-  else
-    exitIrb.CreateUnreachable();
+  // 如果当前块已经有终止指令（如 ret），则不需要添加额外的终止指令
+  if (!exitIrb.GetInsertBlock()->getTerminator()) {
+    if (fty->getReturnType()->isVoidTy())
+      exitIrb.CreateRetVoid();
+    else
+      exitIrb.CreateUnreachable();
+  }
 }
 
 void
