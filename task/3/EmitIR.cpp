@@ -249,37 +249,43 @@ EmitIR::operator()(BinaryExpr* obj)
     case BinaryExpr::kGt: {
       auto lft = self(obj->lft);
       auto rht = self(obj->rht);
-      return irb.CreateICmpSGT(lft, rht);
+      auto cmp = irb.CreateICmpSGT(lft, rht);
+      return irb.CreateZExt(cmp, mIntTy);
     }
 
     case BinaryExpr::kLt: {
       auto lft = self(obj->lft);
       auto rht = self(obj->rht);
-      return irb.CreateICmpSLT(lft, rht);
+      auto cmp = irb.CreateICmpSLT(lft, rht);
+      return irb.CreateZExt(cmp, mIntTy);
     }
 
     case BinaryExpr::kGe: {
       auto lft = self(obj->lft);
       auto rht = self(obj->rht);
-      return irb.CreateICmpSGE(lft, rht);
+      auto cmp = irb.CreateICmpSGE(lft, rht);
+      return irb.CreateZExt(cmp, mIntTy);
     }
 
     case BinaryExpr::kLe: {
       auto lft = self(obj->lft);
       auto rht = self(obj->rht);
-      return irb.CreateICmpSLE(lft, rht);
+      auto cmp = irb.CreateICmpSLE(lft, rht);
+      return irb.CreateZExt(cmp, mIntTy);
     }
 
     case BinaryExpr::kEq: {
       auto lft = self(obj->lft);
       auto rht = self(obj->rht);
-      return irb.CreateICmpEQ(lft, rht);
+      auto cmp = irb.CreateICmpEQ(lft, rht);
+      return irb.CreateZExt(cmp, mIntTy);
     }
 
     case BinaryExpr::kNe: {
       auto lft = self(obj->lft);
       auto rht = self(obj->rht);
-      return irb.CreateICmpNE(lft, rht);
+      auto cmp = irb.CreateICmpNE(lft, rht);
+      return irb.CreateZExt(cmp, mIntTy);
     }
 
     case BinaryExpr::kAnd: {
@@ -386,6 +392,15 @@ EmitIR::operator()(ImplicitCastExpr* obj)
     }
 
     case ImplicitCastExpr::kFunctionToPointerDecay: {
+      return sub;
+    }
+
+    case ImplicitCastExpr::kIntegralCast: {
+      // Integral cast: convert between integer types (e.g., i1 to i32)
+      return irb.CreateIntCast(sub, self(obj->type), true);  // true = signed
+    }
+
+    case ImplicitCastExpr::kNoOp: {
       return sub;
     }
 
