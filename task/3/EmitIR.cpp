@@ -151,8 +151,7 @@ EmitIR::operator()(UnaryExpr* obj)
       // Logical NOT (!): result = (sub == 0) ? 1 : 0
       auto zero = llvm::ConstantInt::get(sub->getType(), 0);
       auto isZero = irb.CreateICmpEQ(sub, zero);
-      return isZero;
-      // return irb.CreateZExt(isZero, sub->getType());
+      return irb.CreateZExt(isZero, mIntTy);
     }
 
     default:
@@ -310,13 +309,14 @@ EmitIR::operator()(BinaryExpr* obj)
       // which may differ from rhtBB.
       auto* rhtTrueBB = irb.GetInsertBlock();
       auto rhtIsTrue = irb.CreateICmpNE(rhtVal, llvm::ConstantInt::get(rhtVal->getType(), 0));
+      auto rhtIsTrueExt = irb.CreateZExt(rhtIsTrue, mIntTy);
       irb.CreateBr(mergeBB);
 
       // Emit merge block with PHI node
       irb.SetInsertPoint(mergeBB);
-      auto* phi = irb.CreatePHI(irb.getInt1Ty(), 2, "and.phi");
-      phi->addIncoming(irb.getInt1(0), lftBB);      // lft was false → result = 0
-      phi->addIncoming(rhtIsTrue, rhtTrueBB);       // lft was true  → result = truth(rht)
+      auto* phi = irb.CreatePHI(mIntTy, 2, "and.phi");
+      phi->addIncoming(llvm::ConstantInt::get(mIntTy, 0), lftBB);  // lft was false → result = 0
+      phi->addIncoming(rhtIsTrueExt, rhtTrueBB);                    // lft was true  → result = truth(rht)
       return phi;
     }
 
@@ -342,13 +342,14 @@ EmitIR::operator()(BinaryExpr* obj)
       // which may differ from rhtBB.
       auto* rhtTrueBB = irb.GetInsertBlock();
       auto rhtIsTrue = irb.CreateICmpNE(rhtVal, llvm::ConstantInt::get(rhtVal->getType(), 0));
+      auto rhtIsTrueExt = irb.CreateZExt(rhtIsTrue, mIntTy);
       irb.CreateBr(mergeBB);
 
       // Emit merge block with PHI node
       irb.SetInsertPoint(mergeBB);
-      auto* phi = irb.CreatePHI(irb.getInt1Ty(), 2, "or.phi");
-      phi->addIncoming(irb.getInt1(1), lftBB);       // lft was true  → result = 1
-      phi->addIncoming(rhtIsTrue, rhtTrueBB);        // lft was false → result = truth(rht)
+      auto* phi = irb.CreatePHI(mIntTy, 2, "or.phi");
+      phi->addIncoming(llvm::ConstantInt::get(mIntTy, 1), lftBB);  // lft was true  → result = 1
+      phi->addIncoming(rhtIsTrueExt, rhtTrueBB);                    // lft was false → result = truth(rht)
       return phi;
     }
 
