@@ -583,6 +583,10 @@ EmitIR::operator()(asg::WhileStmt* obj)
   mCurLoopEndBB = endBB;
   mCurLoopCondBB = condBB;
 
+  // 记录进入循环体前 mSavedStacks 的大小，使得 break/continue 只恢复
+  // 循环体内部 CompoundStmt 的栈帧，而不影响外层。
+  mLoopSavedStackSize.push_back(mSavedStacks.size());
+
   // Branch to condition check block
   irb.CreateBr(condBB);
 
@@ -598,6 +602,9 @@ EmitIR::operator()(asg::WhileStmt* obj)
   // If the body doesn't have a terminator (e.g., return/break), branch back to cond
   if (!irb.GetInsertBlock()->getTerminator())
     irb.CreateBr(condBB);
+
+  // 弹出循环体栈帧边界标记
+  mLoopSavedStackSize.pop_back();
 
   // Restore previous loop context
   mCurLoopEndBB = savedEndBB;
@@ -617,6 +624,17 @@ EmitIR::operator()(asg::BreakStmt* obj)
   };
   */
   auto& irb = *mCurIrb;
+
+  // 只恢复当前循环体内部 CompoundStmt 的栈帧，不影响外层循环或函数体。
+  // 同时从 mSavedStacks 中弹出这些条目，防止外层 CompoundStmt 的
+  // pop_back() 操作到已恢复的栈帧（避免双重恢复）。
+  size_t savedStackSize =
+    mLoopSavedStackSize.empty() ? 0 : mLoopSavedStackSize.back();
+  while (mSavedStacks.size() > savedStackSize) {
+    auto* stack = mSavedStacks.back();
+    mSavedStacks.pop_back();
+    irb.CreateStackRestore(stack);
+  }
 
   // Branch to the end of the current loop
   irb.CreateBr(mCurLoopEndBB);
@@ -638,6 +656,17 @@ EmitIR::operator()(asg::ContinueStmt* obj)
   */
   auto& irb = *mCurIrb;
 
+  // 只恢复当前循环体内部 CompoundStmt 的栈帧，不影响外层循环或函数体。
+  // 同时从 mSavedStacks 中弹出这些条目，防止外层 CompoundStmt 的
+  // pop_back() 操作到已恢复的栈帧（避免双重恢复）。
+  size_t savedStackSize =
+    mLoopSavedStackSize.empty() ? 0 : mLoopSavedStackSize.back();
+  while (mSavedStacks.size() > savedStackSize) {
+    auto* stack = mSavedStacks.back();
+    mSavedStacks.pop_back();
+    irb.CreateStackRestore(stack);
+  }
+
   // Branch to the condition block of the current loop
   irb.CreateBr(mCurLoopCondBB);
 
@@ -651,8 +680,25 @@ void
 EmitIR::operator()(CompoundStmt* obj)
 {
   // TODO: 可以在此添加对符号重名的处理
+
+  // 使用 llvm.stacksave 保存当前栈指针，以便在复合语句结束时
+  // 通过 llvm.stackrestore 回收该复合语句中 alloca 分配的栈空间
+  auto& irb = *mCurIrb;
+  auto savedStack = irb.CreateStackSave();
+  mSavedStacks.push_back(savedStack);
+
   for (auto&& stmt : obj->subs)
     self(stmt);
+
+  // 如果当前块没有终止指令（如 ret、br），则在复合语句末尾
+  // 恢复栈指针，回收局部变量占用的栈空间
+  if (!irb.GetInsertBlock()->getTerminator())
+    irb.CreateStackRestore(savedStack);
+
+  // 只有当 mSavedStacks 非空时才 pop，因为 ReturnStmt/BreakStmt/ContinueStmt
+  // 可能已经排空了 mSavedStacks
+  if (!mSavedStacks.empty())
+    mSavedStacks.pop_back();
 }
 
 void
@@ -693,6 +739,14 @@ EmitIR::operator()(ReturnStmt* obj)
     retVal = nullptr;
   else
     retVal = self(obj->expr);
+
+  // 在 return 之前，恢复所有嵌套复合语句的栈空间并排空 mSavedStacks，
+  // 因为函数即将退出，所有局部存储都必须释放。
+  while (!mSavedStacks.empty()) {
+    auto* stack = mSavedStacks.back();
+    mSavedStacks.pop_back();
+    irb.CreateStackRestore(stack);
+  }
 
   mCurIrb->CreateRet(retVal);
 
@@ -762,10 +816,13 @@ EmitIR::operator()(FunctionDecl* obj)
     ++argIter;
   }
 
-  // 翻译函数体
+  // 翻译函数体前清空 mSavedStacks，防止上一个函数的残留污染
+  mSavedStacks.clear();
   mCurFunc = func;
   self(obj->body);
   mCurFunc = nullptr;  // 重置 mCurFunc
+  // 翻译完成后 mSavedStacks 应该为空（所有 push 都有对应的 pop）
+  mSavedStacks.clear();
   auto& exitIrb = *mCurIrb;
 
   // 如果当前块已经有终止指令（如 ret），则不需要添加额外的终止指令

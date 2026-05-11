@@ -3,6 +3,8 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 
+#include <vector>
+
 class EmitIR
 {
 public:
@@ -26,6 +28,16 @@ private:
   llvm::BasicBlock* mCurLoopEndBB{ nullptr };
   /// 当前循环的条件块（用于 continue 跳转）
   llvm::BasicBlock* mCurLoopCondBB{ nullptr };
+
+  /// 复合语句栈帧保存栈：每进入一个复合语句，将 llvm.stacksave 的返回值
+  /// 压入此栈；在 return/break/continue 等提前退出路径上，遍历此栈并
+  /// 依次调用 llvm.stackrestore 以回收所有嵌套复合语句的栈空间。
+  std::vector<llvm::Value*> mSavedStacks;
+
+  /// 对于每个嵌套循环层级，记录循环体开始执行时 mSavedStacks 的大小。
+  /// break/continue 只应恢复在此之后压入的 stacksave（即循环体内部的
+  /// CompoundStmt），而不应恢复外层循环或函数体的栈帧。
+  std::vector<size_t> mLoopSavedStackSize;
 
   //============================================================================
   // 类型
