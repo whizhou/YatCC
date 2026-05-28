@@ -7,6 +7,21 @@
 
 using namespace asg;
 
+namespace {
+
+// 将普通局部变量的 alloca 统一插入到函数 entry block。
+// 这样局部变量的存储空间由函数栈帧统一管理，不再需要在每个 CompoundStmt
+// 中通过 stacksave/stackrestore 手动释放。
+llvm::AllocaInst*
+createEntryBlockAlloca(llvm::Function* func, llvm::Type* ty, llvm::StringRef name)
+{
+  auto& entry = func->getEntryBlock();
+  llvm::IRBuilder<> tmp(&entry, entry.begin());
+  return tmp.CreateAlloca(ty, nullptr, name);
+}
+
+} // namespace
+
 EmitIR::EmitIR(Obj::Mgr& mgr, llvm::LLVMContext& ctx, llvm::StringRef mid)
   : mMgr(mgr)
   , mMod(mid, ctx)
@@ -531,9 +546,8 @@ EmitIR::operator()(asg::IfStmt* obj)
     // Emit 'then' block
     irb.SetInsertPoint(thenBB);
     self(obj->then);
-    // 检查当前插入点所在块是否有终止指令（如 ret）
-    // 使用 GetInsertBlock() 而非 thenBB，因为子语句（如 ReturnStmt）
-    // 可能已将插入点移动到新块
+    // 检查当前插入点所在块是否有终止指令（如 ret/br）
+    // 使用 GetInsertBlock() 而非 thenBB，因为子语句可能已将插入点移动到新块
     if (!irb.GetInsertBlock()->getTerminator())
       irb.CreateBr(mergeBB);
 
@@ -583,10 +597,6 @@ EmitIR::operator()(asg::WhileStmt* obj)
   mCurLoopEndBB = endBB;
   mCurLoopCondBB = condBB;
 
-  // 记录进入循环体前 mSavedStacks 的大小，使得 break/continue 只恢复
-  // 循环体内部 CompoundStmt 的栈帧，而不影响外层。
-  mLoopSavedStackSize.push_back(mSavedStacks.size());
-
   // Branch to condition check block
   irb.CreateBr(condBB);
 
@@ -599,12 +609,9 @@ EmitIR::operator()(asg::WhileStmt* obj)
   // Emit body block
   irb.SetInsertPoint(bodyBB);
   self(obj->body);
-  // If the body doesn't have a terminator (e.g., return/break), branch back to cond
+  // If the body doesn't have a terminator (e.g., return/break/continue), branch back to cond
   if (!irb.GetInsertBlock()->getTerminator())
     irb.CreateBr(condBB);
-
-  // 弹出循环体栈帧边界标记
-  mLoopSavedStackSize.pop_back();
 
   // Restore previous loop context
   mCurLoopEndBB = savedEndBB;
@@ -625,24 +632,12 @@ EmitIR::operator()(asg::BreakStmt* obj)
   */
   auto& irb = *mCurIrb;
 
-  // 只恢复当前循环体内部 CompoundStmt 的栈帧，不影响外层循环或函数体。
-  // 同时从 mSavedStacks 中弹出这些条目，防止外层 CompoundStmt 的
-  // pop_back() 操作到已恢复的栈帧（避免双重恢复）。
-  size_t savedStackSize =
-    mLoopSavedStackSize.empty() ? 0 : mLoopSavedStackSize.back();
-  while (mSavedStacks.size() > savedStackSize) {
-    auto* stack = mSavedStacks.back();
-    mSavedStacks.pop_back();
-    irb.CreateStackRestore(stack);
-  }
+  if (mCurLoopEndBB == nullptr)
+    ABORT();
 
+  // 局部变量统一在函数 entry block 分配，break 不再需要恢复块级栈高度。
   // Branch to the end of the current loop
   irb.CreateBr(mCurLoopEndBB);
-
-  // Create an unreachable block after break to absorb subsequent code
-  auto* unreachableBB = llvm::BasicBlock::Create(mCtx, "break.after", mCurFunc);
-  irb.SetInsertPoint(unreachableBB);
-  irb.CreateUnreachable();
 }
 
 void
@@ -656,24 +651,12 @@ EmitIR::operator()(asg::ContinueStmt* obj)
   */
   auto& irb = *mCurIrb;
 
-  // 只恢复当前循环体内部 CompoundStmt 的栈帧，不影响外层循环或函数体。
-  // 同时从 mSavedStacks 中弹出这些条目，防止外层 CompoundStmt 的
-  // pop_back() 操作到已恢复的栈帧（避免双重恢复）。
-  size_t savedStackSize =
-    mLoopSavedStackSize.empty() ? 0 : mLoopSavedStackSize.back();
-  while (mSavedStacks.size() > savedStackSize) {
-    auto* stack = mSavedStacks.back();
-    mSavedStacks.pop_back();
-    irb.CreateStackRestore(stack);
-  }
+  if (mCurLoopCondBB == nullptr)
+    ABORT();
 
+  // 局部变量统一在函数 entry block 分配，continue 不再需要恢复块级栈高度。
   // Branch to the condition block of the current loop
   irb.CreateBr(mCurLoopCondBB);
-
-  // Create an unreachable block after continue to absorb subsequent code
-  auto* unreachableBB = llvm::BasicBlock::Create(mCtx, "continue.after", mCurFunc);
-  irb.SetInsertPoint(unreachableBB);
-  irb.CreateUnreachable();
 }
 
 void
@@ -681,24 +664,17 @@ EmitIR::operator()(CompoundStmt* obj)
 {
   // TODO: 可以在此添加对符号重名的处理
 
-  // 使用 llvm.stacksave 保存当前栈指针，以便在复合语句结束时
-  // 通过 llvm.stackrestore 回收该复合语句中 alloca 分配的栈空间
   auto& irb = *mCurIrb;
-  auto savedStack = irb.CreateStackSave();
-  mSavedStacks.push_back(savedStack);
 
-  for (auto&& stmt : obj->subs)
+  // 方案一：普通局部变量统一在函数 entry block 中 alloca。
+  // 因此复合语句本身不再负责 stacksave/stackrestore。
+  // 如果前一条语句已经生成 ret/br 等终止指令，则停止生成当前块中后续语句，
+  // 避免继续向已经终止的 basic block 中插入指令。
+  for (auto&& stmt : obj->subs) {
+    if (irb.GetInsertBlock()->getTerminator())
+      break;
     self(stmt);
-
-  // 如果当前块没有终止指令（如 ret、br），则在复合语句末尾
-  // 恢复栈指针，回收局部变量占用的栈空间
-  if (!irb.GetInsertBlock()->getTerminator())
-    irb.CreateStackRestore(savedStack);
-
-  // 只有当 mSavedStacks 非空时才 pop，因为 ReturnStmt/BreakStmt/ContinueStmt
-  // 可能已经排空了 mSavedStacks
-  if (!mSavedStacks.empty())
-    mSavedStacks.pop_back();
+  }
 }
 
 void
@@ -740,19 +716,12 @@ EmitIR::operator()(ReturnStmt* obj)
   else
     retVal = self(obj->expr);
 
-  // 在 return 之前，恢复所有嵌套复合语句的栈空间并排空 mSavedStacks，
-  // 因为函数即将退出，所有局部存储都必须释放。
-  while (!mSavedStacks.empty()) {
-    auto* stack = mSavedStacks.back();
-    mSavedStacks.pop_back();
-    irb.CreateStackRestore(stack);
-  }
-
-  mCurIrb->CreateRet(retVal);
-
-  auto exitBb = llvm::BasicBlock::Create(mCtx, "return_exit", mCurFunc);
-  mCurIrb->SetInsertPoint(exitBb);
-  mCurIrb->CreateUnreachable();
+  // 局部变量统一在函数 entry block 分配，函数返回时由函数栈帧统一释放；
+  // 因此 return 前不再需要手动 stackrestore。
+  if (retVal == nullptr)
+    irb.CreateRetVoid();
+  else
+    irb.CreateRet(retVal);
 }
 
 //==============================================================================
@@ -793,9 +762,12 @@ EmitIR::operator()(FunctionDecl* obj)
 
   if (obj->body == nullptr)
     return;
+
   auto entryBb = llvm::BasicBlock::Create(mCtx, "entry", func);
   mCurIrb->SetInsertPoint(entryBb);
   auto& entryIrb = *mCurIrb;
+
+  mCurFunc = func;
 
   // TODO: 添加对函数参数的处理
   auto argIter = func->arg_begin();
@@ -803,11 +775,12 @@ EmitIR::operator()(FunctionDecl* obj)
     // 设置 LLVM 参数名称
     argIter->setName(param->name);
 
-    // 为参数创建 alloca，使得参数可以被修改
+    // 为参数创建 alloca，使得参数可以被修改。
+    // 参数 alloca 也统一放入 entry block。
     auto ty = self(param->type);
-    auto alloca = entryIrb.CreateAlloca(ty, nullptr, param->name);
+    auto alloca = createEntryBlockAlloca(func, ty, param->name);
 
-    // 将参数值存储到 alloca 中
+    // 将参数值存储到 alloca 中。store 指令仍然放在当前 entry 插入点。
     entryIrb.CreateStore(argIter, alloca);
 
     // 设置 param->any 以便 DeclRefExpr 可以引用
@@ -816,22 +789,19 @@ EmitIR::operator()(FunctionDecl* obj)
     ++argIter;
   }
 
-  // 翻译函数体前清空 mSavedStacks，防止上一个函数的残留污染
-  mSavedStacks.clear();
-  mCurFunc = func;
   self(obj->body);
-  mCurFunc = nullptr;  // 重置 mCurFunc
-  // 翻译完成后 mSavedStacks 应该为空（所有 push 都有对应的 pop）
-  mSavedStacks.clear();
+
   auto& exitIrb = *mCurIrb;
 
-  // 如果当前块已经有终止指令（如 ret），则不需要添加额外的终止指令
+  // 如果当前块已经有终止指令（如 ret/br），则不需要添加额外的终止指令
   if (!exitIrb.GetInsertBlock()->getTerminator()) {
     if (fty->getReturnType()->isVoidTy())
       exitIrb.CreateRetVoid();
     else
       exitIrb.CreateUnreachable();
   }
+
+  mCurFunc = nullptr;  // 重置 mCurFunc
 }
 
 void
@@ -887,9 +857,10 @@ EmitIR::operator()(VarDecl* obj)
   auto ty = self(obj->type);
 
   if (mCurFunc != nullptr) {
-    // 局部变量
+    // 局部变量：统一在函数 entry block 中创建 alloca。
+    // 初始化代码仍然在变量声明出现的位置生成，从而保持源程序的执行顺序。
     auto& irb = *mCurIrb;
-    auto alloca = irb.CreateAlloca(ty, nullptr, obj->name);
+    auto alloca = createEntryBlockAlloca(mCurFunc, ty, obj->name);
 
     obj->any = alloca;
 
@@ -924,4 +895,3 @@ EmitIR::operator()(VarDecl* obj)
     mCurFunc = nullptr;  // 重置 mCurFunc
   }
 }
-
