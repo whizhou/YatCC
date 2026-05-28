@@ -7,7 +7,13 @@ int deepWhileBr(int a, int b) {
   int c;
   c = a + b;
   while (c < 75) {
-    int d;
+    int d = 0;
+    while (1) {
+      d = d + 1;
+      int t = d;
+      if (t > 10000)
+        break;
+    }
     d = 42;
     if (c < 100) {
       c = c + d;
