@@ -7,14 +7,14 @@
 using namespace llvm;
 
 /// 尝试对二元运算指令进行指令合并
-/// 返回新指令（已替换所有使用者）或 nullptr
+/// 返回新值（Instruction* 或 Constant*）或 nullptr
 ///
 /// 支持的模式：
 /// 1. 恒等消除：add(x,0)->x, sub(x,0)->x, mul(x,1)->x, div(x,1)->x
 /// 2. 零化：mul(x,0)->0, and(x,0)->0
 /// 3. 常量链合并：add(add(x,C1),C2)->add(x,C1+C2) 等
 /// 4. 自身消除：sub(x,x)->0
-static Instruction*
+static Value*
 tryCombine(BinaryOperator* binOp)
 {
   Value* lhs = binOp->getOperand(0);
@@ -270,22 +270,23 @@ combineInstructions(Module& mod)
         }
 
         // 尝试指令合并
-        Instruction* newInst = tryCombine(binOp);
-        if (newInst) {
-          // 将新指令插入到原指令之后
-          newInst->insertAfter(binOp);
-          // 复制 nsw/nuw 标志
-          if (auto* newBinOp = dyn_cast<BinaryOperator>(newInst)) {
-            newBinOp->setHasNoUnsignedWrap(binOp->hasNoUnsignedWrap());
-            newBinOp->setHasNoSignedWrap(binOp->hasNoSignedWrap());
+        Value* newVal = tryCombine(binOp);
+        if (newVal) {
+          if (auto* newInst = dyn_cast<Instruction>(newVal)) {
+            // 将新指令插入到原指令之后
+            newInst->insertAfter(binOp);
+            // 复制 nsw/nuw 标志
+            if (auto* newBinOp = dyn_cast<BinaryOperator>(newInst)) {
+              newBinOp->setHasNoUnsignedWrap(binOp->hasNoUnsignedWrap());
+              newBinOp->setHasNoSignedWrap(binOp->hasNoSignedWrap());
+            }
+            // 新指令可能还可以继续合并，加入 worklist
+            if (auto* newBinOp = dyn_cast<BinaryOperator>(newInst))
+              worklist.push_back(newBinOp);
           }
-          binOp->replaceAllUsesWith(newInst);
+          binOp->replaceAllUsesWith(newVal);
           toErase.push_back(binOp);
           ++combined;
-
-          // 新指令可能还可以继续合并，加入 worklist
-          if (auto* newBinOp = dyn_cast<BinaryOperator>(newInst))
-            worklist.push_back(newBinOp);
         }
       }
     }
