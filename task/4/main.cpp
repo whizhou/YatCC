@@ -7,6 +7,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include "ConstantFolding.hpp"
+#include "ConstantPropagation.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
@@ -83,9 +84,13 @@ opt(llvm::Module& mod)
 
   // 传统 LLVM Pass 来进行编译优化
   // 添加优化pass到管理器中
-  mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
+  // ConstantPropagation 内部循环执行常量传播和常量折叠直到收敛
+  // 先运行一轮常量传播+折叠，再运行 Mem2Reg，最后再运行一轮常量传播+折叠
+  // 以保证 Mem2Reg 消除 alloca 后产生的新常量也能被优化
+  mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(Mem2Reg());
-  mpm.addPass(ConstantFolding(llvm::errs()));
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
 
 #endif
 
