@@ -6,8 +6,11 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include "CommonSubexpressionElimination.hpp"
 #include "ConstantFolding.hpp"
 #include "ConstantPropagation.hpp"
+#include "DeadCodeElimination.hpp"
+#include "InstructionCombining.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
@@ -71,13 +74,6 @@ opt(llvm::Module& mod)
         TASK4_DIR "/Mem2Reg.cpp",
         "Mem2Reg.xml",
         [](llvm::ModulePassManager& mpm) { mpm.addPass(Mem2Reg()); } },
-      { "ConstantFolding",
-        TASK4_DIR "/ConstantFolding.hpp",
-        TASK4_DIR "/ConstantFolding.cpp",
-        "ConstantFolding.xml",
-        [](llvm::ModulePassManager& mpm) {
-          mpm.addPass(ConstantFolding(llvm::errs()));
-        } },
     }));
 
 #else
@@ -90,6 +86,11 @@ opt(llvm::Module& mod)
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(Mem2Reg());
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(InstructionCombining(llvm::errs()));
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(CommonSubexpressionElimination(llvm::errs()));
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
 
 #endif
