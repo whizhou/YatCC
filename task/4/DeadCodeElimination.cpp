@@ -5,6 +5,24 @@
 
 using namespace llvm;
 
+/// 检查全局变量是否被任何 load 指令读取
+/// 如果全局变量只有 store 而没有 load，则对它的写入是死存储
+static bool
+hasLoadsFromGlobal(GlobalVariable* GV)
+{
+  for (User* U : GV->users()) {
+    if (isa<LoadInst>(U))
+      return true;
+    if (auto* GEP = dyn_cast<GetElementPtrInst>(U)) {
+      for (User* GEPU : GEP->users()) {
+        if (isa<LoadInst>(GEPU))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// 判断指令是否有副作用（不可安全删除）
 /// 对于函数调用，检查函数属性以判断是否有副作用
 static bool
@@ -14,9 +32,18 @@ hasSideEffects(Instruction* inst)
   if (inst->isTerminator())
     return true;
 
-  // store 指令有副作用（修改内存）
-  if (isa<StoreInst>(inst))
+  // store 指令通常有副作用（修改内存），但若目标是全局变量
+  // 且该全局变量从未被 load，则可以安全删除
+  if (auto* SI = dyn_cast<StoreInst>(inst)) {
+    Value* ptr = SI->getPointerOperand();
+    // 如果 store 目标是全局变量且该全局变量从未被读取，
+    // 则这个 store 是死存储，无副作用
+    if (auto* GV = dyn_cast<GlobalVariable>(ptr)) {
+      if (!hasLoadsFromGlobal(GV))
+        return false;
+    }
     return true;
+  }
 
   // fence 指令有副作用
   if (isa<FenceInst>(inst))
