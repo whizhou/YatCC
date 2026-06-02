@@ -10,6 +10,7 @@
 #include "ConstantFolding.hpp"
 #include "ConstantPropagation.hpp"
 #include "DeadCodeElimination.hpp"
+#include "DeadStoreElimination.hpp"
 #include "InstructionCombining.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
@@ -85,11 +86,14 @@ opt(llvm::Module& mod)
   // 以保证 Mem2Reg 消除 alloca 后产生的新常量也能被优化
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(Mem2Reg());
+  mpm.addPass(DeadStoreElimination(llvm::errs()));
+  mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(InstructionCombining(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(CommonSubexpressionElimination(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
 
