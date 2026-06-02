@@ -12,6 +12,8 @@
 #include "DeadCodeElimination.hpp"
 #include "DeadStoreElimination.hpp"
 #include "InstructionCombining.hpp"
+#include "LICM.hpp"
+#include "loopUnroll.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
@@ -88,11 +90,15 @@ opt(llvm::Module& mod)
   mpm.addPass(Mem2Reg());
   mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
+  mpm.addPass(LICM(llvm::errs()));
+  mpm.addPass(LoopUnroll(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(InstructionCombining(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(LICM(llvm::errs()));
   mpm.addPass(CommonSubexpressionElimination(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(LICM(llvm::errs()));
   mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
