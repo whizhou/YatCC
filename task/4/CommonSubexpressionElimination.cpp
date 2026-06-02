@@ -87,8 +87,8 @@ hashInstruction(Instruction* inst)
 }
 
 /// 公共子表达式消除的核心算法
-/// 对每个基本块，在向后的窗口范围内搜索相同的指令
-/// 若找到，则用已有指令替换当前指令的所有使用
+/// 对每个基本块，正向遍历指令，在向前的窗口范围内搜索相同的指令
+/// 若找到，则用已有的（更早的）指令替换当前指令的所有使用
 static int
 eliminateCommonSubexpressions(Module& mod, unsigned windowSize)
 {
@@ -105,15 +105,17 @@ eliminateCommonSubexpressions(Module& mod, unsigned windowSize)
       // 用于维护窗口：记录指令及其哈希值，便于在滑出窗口时移除
       std::vector<std::pair<Instruction*, size_t>> window;
 
-      // 反向遍历基本块中的指令（从后向前）
-      // 这样搜索窗口自然覆盖当前指令前面的指令
-      for (auto it = bb.rbegin(); it != bb.rend(); ++it) {
-        Instruction* inst = &(*it);
+      // 正向遍历基本块中的指令（从前向后）
+      // 窗口中的候选指令总是在当前指令之前，
+      // 因此候选指令支配当前指令及其所有使用，不会违反支配关系
+      for (auto& instRef : bb) {
+        Instruction* inst = &instRef;
 
         if (!isCSECandidate(inst))
           continue;
 
         size_t h = hashInstruction(inst);
+        bool eliminatedThis = false;
 
         // 在窗口中搜索相同的指令
         auto mapIt = exprMap.find(h);
@@ -123,7 +125,8 @@ eliminateCommonSubexpressions(Module& mod, unsigned windowSize)
             // isIdenticalTo 检查操作码、类型、操作数和标志位
             if (inst->isIdenticalTo(candidate)) {
               // 找到公共子表达式，用已有的指令替换
-              // 复制元数据（nsw/nuw 等标志）
+              // candidate 在窗口中（即当前指令之前），因此 candidate
+              // 支配 inst 及其所有使用
               candidate->copyMetadata(*inst);
 
               // 替换所有使用者
@@ -132,29 +135,33 @@ eliminateCommonSubexpressions(Module& mod, unsigned windowSize)
               // 标记为待删除
               toErase.push_back(inst);
               ++eliminated;
+              eliminatedThis = true;
               break;
             }
           }
         }
 
-        // 将当前指令加入窗口
-        window.emplace_back(inst, h);
-        exprMap[h].push_back(inst);
+        // 只有未被消除的指令才加入窗口作为候选
+        // 已被消除的指令加入窗口会导致后续指令错误地匹配到它
+        if (!eliminatedThis) {
+          window.emplace_back(inst, h);
+          exprMap[h].push_back(inst);
 
-        // 维护窗口大小：移除超出窗口范围的指令
-        while (window.size() > windowSize) {
-          auto& [oldInst, oldHash] = window.front();
-          auto& vec = exprMap[oldHash];
-          // 从哈希表中移除该指令
-          for (auto vecIt = vec.begin(); vecIt != vec.end(); ++vecIt) {
-            if (*vecIt == oldInst) {
-              vec.erase(vecIt);
-              break;
+          // 维护窗口大小：移除超出窗口范围的指令
+          while (window.size() > windowSize) {
+            auto& [oldInst, oldHash] = window.front();
+            auto& vec = exprMap[oldHash];
+            // 从哈希表中移除该指令
+            for (auto vecIt = vec.begin(); vecIt != vec.end(); ++vecIt) {
+              if (*vecIt == oldInst) {
+                vec.erase(vecIt);
+                break;
+              }
             }
+            if (vec.empty())
+              exprMap.erase(oldHash);
+            window.erase(window.begin());
           }
-          if (vec.empty())
-            exprMap.erase(oldHash);
-          window.erase(window.begin());
         }
       }
     }

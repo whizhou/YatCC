@@ -40,14 +40,14 @@ tryCombine(BinaryOperator* binOp)
             int64_t newConst = innerConst->getSExtValue() + constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerAdd->getOperand(0), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
           if (auto* innerConst = dyn_cast<ConstantInt>(innerAdd->getOperand(0))) {
             // add(add(C1, x), C2) -> add(x, C1+C2)
             int64_t newConst = innerConst->getSExtValue() + constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerAdd->getOperand(1), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
         }
       }
@@ -58,13 +58,13 @@ tryCombine(BinaryOperator* binOp)
             int64_t newConst = constLhs->getSExtValue() + innerConst->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerAdd->getOperand(0), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
           if (auto* innerConst = dyn_cast<ConstantInt>(innerAdd->getOperand(0))) {
             int64_t newConst = constLhs->getSExtValue() + innerConst->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerAdd->getOperand(1), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
         }
       }
@@ -87,7 +87,7 @@ tryCombine(BinaryOperator* binOp)
             int64_t newConst = innerConst->getSExtValue() + constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateSub(innerSub->getOperand(0), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
         }
       }
@@ -99,13 +99,13 @@ tryCombine(BinaryOperator* binOp)
             int64_t newConst = innerConst->getSExtValue() - constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerAdd->getOperand(0), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
           if (auto* innerConst = dyn_cast<ConstantInt>(innerAdd->getOperand(0))) {
             int64_t newConst = innerConst->getSExtValue() - constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerAdd->getOperand(1), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
         }
       }
@@ -118,7 +118,7 @@ tryCombine(BinaryOperator* binOp)
             int64_t newConst = constLhs->getSExtValue() - innerConst->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateAdd(innerSub->getOperand(0), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
         }
       }
@@ -145,13 +145,13 @@ tryCombine(BinaryOperator* binOp)
             int64_t newConst = innerConst->getSExtValue() * constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateMul(innerMul->getOperand(0), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
           if (auto* innerConst = dyn_cast<ConstantInt>(innerMul->getOperand(0))) {
             int64_t newConst = innerConst->getSExtValue() * constRhs->getSExtValue();
             auto* newC = ConstantInt::getSigned(ty, newConst);
             return BinaryOperator::CreateMul(innerMul->getOperand(1), newC, "",
-                                              binOp);
+                                              (Instruction*)nullptr);
           }
         }
       }
