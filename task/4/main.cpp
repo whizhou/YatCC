@@ -12,8 +12,10 @@
 #include "ConstantPropagation.hpp"
 #include "DeadCodeElimination.hpp"
 #include "DeadStoreElimination.hpp"
+#include "FunctionInlining.hpp"
 #include "InstructionCombining.hpp"
 #include "LICM.hpp"
+#include "LoopUnroll.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
@@ -89,6 +91,7 @@ opt(llvm::Module& mod)
   // 以保证 Mem2Reg 消除 alloca 后产生的新常量也能被优化
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(AlgebraicIdentity(llvm::errs()));
+  mpm.addPass(FunctionInlining(llvm::errs()));
   mpm.addPass(Mem2Reg());
   mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
@@ -99,6 +102,7 @@ opt(llvm::Module& mod)
   mpm.addPass(StrengthReduction(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(LICM(llvm::errs()));
+  mpm.addPass(LoopUnroll(llvm::errs()));
   mpm.addPass(CommonSubexpressionElimination(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(AlgebraicIdentity(llvm::errs()));

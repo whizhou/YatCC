@@ -1,5 +1,7 @@
 #include "ConstantPropagation.hpp"
 
+#include <llvm/IR/Instructions.h>
+
 using namespace llvm;
 
 /// 检查全局变量是否被 store 指令修改
@@ -14,6 +16,11 @@ hasStoreToGlobal(GlobalVariable* GV)
         if (isa<StoreInst>(GEPU))
           return true;
       }
+    }
+    // 如果全局变量通过函数调用传递，被调用函数可能修改它
+    if (auto* CB = dyn_cast<CallBase>(U)) {
+      if (!CB->doesNotAccessMemory())
+        return true;
     }
   }
   return false;

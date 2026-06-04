@@ -34,6 +34,12 @@ isAllocaNeverLoaded(AllocaInst* AI)
     if (isa<LoadInst>(V))
       return false;
 
+    // 如果 alloca 被传递给函数调用，被调用函数可能通过指针读取它
+    if (auto* CB = dyn_cast<CallBase>(V)) {
+      if (!CB->doesNotAccessMemory())
+        return false;
+    }
+
     // 通过 GEP 和 bitcast 间接访问，继续追踪其用户
     if (isa<GetElementPtrInst>(V) || isa<BitCastInst>(V) ||
         isa<AddrSpaceCastInst>(V)) {

@@ -163,14 +163,14 @@ isLoopInvariant(Instruction* I, Loop* L, LoopInfo& LI,
 /// 从单个循环中提升循环无关指令到 preheader
 /// 重复迭代直到收敛，因为提升一条指令可能使依赖它的指令也变为循环无关
 static int
-hoistFromLoop(Loop* L, LoopInfo& LI, DominatorTree& DT)
+hoistFromLoop(Loop* L, LoopInfo& LI, DominatorTree& DT,
+              SmallPtrSetImpl<Instruction*>& hoistedSet)
 {
   BasicBlock* preheader = L->getLoopPreheader();
   if (!preheader)
     return 0;
 
   int count = 0;
-  SmallPtrSet<Instruction*, 16> hoistedSet;
   bool changed = true;
 
   // 迭代直到没有新的指令可以提升
@@ -250,9 +250,11 @@ LICM::run(Module& mod, ModuleAnalysisManager& mam)
     }
 
     // 依次处理每个循环（内层优先）
+    // hoistedSet 在函数内所有循环间共享，确保外层循环能看到内层循环已提升的指令
+    SmallPtrSet<Instruction*, 16> hoistedSet;
     int before = totalHoisted;
     for (Loop* L : postorderLoops) {
-      totalHoisted += hoistFromLoop(L, LI, DT);
+      totalHoisted += hoistFromLoop(L, LI, DT, hoistedSet);
     }
     if (totalHoisted > before)
       modifiedFunctions.insert(&F);

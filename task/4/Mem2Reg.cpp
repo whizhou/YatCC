@@ -889,18 +889,22 @@ static bool
 promoteMemoryToRegister(Function& F, DominatorTree& DT)
 {
   std::vector<AllocaInst*> Allocas;
-  BasicBlock& BB = F.getEntryBlock(); // Get the entry node for the function
   bool Changed = false;
 
   while (true) {
     Allocas.clear();
 
     // Find allocas that are safe to promote, by looking at all instructions in
-    // the entry node
-    for (BasicBlock::iterator I = BB.begin(), E = --BB.end(); I != E; ++I)
-      if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) // Is it an alloca?
-        if (isAllocaPromotable(AI))
-          Allocas.push_back(AI);
+    // all basic blocks (not just the entry block, since inlining may create
+    // allocas in other blocks)
+    for (BasicBlock& BB : F) {
+      for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
+        if (AllocaInst* AI = dyn_cast<AllocaInst>(I)) {
+          if (isAllocaPromotable(AI))
+            Allocas.push_back(AI);
+        }
+      }
+    }
 
     if (Allocas.empty())
       break;
