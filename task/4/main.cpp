@@ -7,6 +7,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include "AlgebraicIdentity.hpp"
+#include "AllocaHoisting.hpp"
 #include "CommonSubexpressionElimination.hpp"
 #include "ConstantFolding.hpp"
 #include "ConstantPropagation.hpp"
@@ -92,6 +93,7 @@ opt(llvm::Module& mod)
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(AlgebraicIdentity(llvm::errs()));
   mpm.addPass(FunctionInlining(llvm::errs()));
+  mpm.addPass(AllocaHoisting(llvm::errs()));
   mpm.addPass(Mem2Reg());
   mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
