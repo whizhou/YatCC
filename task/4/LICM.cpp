@@ -1,5 +1,6 @@
 #include "LICM.hpp"
 
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Analysis/ValueTracking.h>
 #include <llvm/IR/Dominators.h>
@@ -11,18 +12,20 @@ using namespace llvm;
 namespace {
 
 /// 检查 load 指令所加载的内存位置是否在循环内被修改
-/// 遍历循环中的所有 store 指令，检查是否有对同一指针的写入。
+/// 遍历循环中的所有 store 指令，检查是否有对同一底层对象的写入。
+/// 使用 getUnderlyingObject 比较底层对象，避免不同 GEP 指令计算相同地址却比较失败的问题。
 /// 同时保守地认为任何可能写内存的 call 指令都会修改该位置。
 static bool
 isLoadInvariantInLoop(LoadInst* LI, Loop* L)
 {
-  Value* ptr = LI->getPointerOperand();
+  Value* loadObj = getUnderlyingObject(LI->getPointerOperand());
 
   for (BasicBlock* BB : L->blocks()) {
     for (Instruction& I : *BB) {
-      // 检查同指针的 store
+      // 检查同底层对象的 store
       if (auto* SI = dyn_cast<StoreInst>(&I)) {
-        if (SI->getPointerOperand() == ptr)
+        Value* storeObj = getUnderlyingObject(SI->getPointerOperand());
+        if (storeObj == loadObj)
           return false;
       }
       // 保守处理：任何可能写内存的 call 都可能修改该位置
@@ -221,10 +224,11 @@ LICM::run(Module& mod, ModuleAnalysisManager& mam)
 {
   int totalHoisted = 0;
 
-  // 创建函数级分析管理器以获取每个函数的 LoopInfo 和 DominatorTree
-  FunctionAnalysisManager fam;
-  PassBuilder pb;
-  pb.registerFunctionAnalyses(fam);
+  // 使用管线的 FunctionAnalysisManager，避免创建独立的 FAM 导致后续 pass 使用过时分析结果
+  auto& proxy = mam.getResult<FunctionAnalysisManagerModuleProxy>(mod);
+  FunctionAnalysisManager& fam = proxy.getManager();
+
+  SmallPtrSet<Function*, 4> modifiedFunctions;
 
   for (Function& F : mod) {
     if (F.isDeclaration())
@@ -246,9 +250,12 @@ LICM::run(Module& mod, ModuleAnalysisManager& mam)
     }
 
     // 依次处理每个循环（内层优先）
+    int before = totalHoisted;
     for (Loop* L : postorderLoops) {
       totalHoisted += hoistFromLoop(L, LI, DT);
     }
+    if (totalHoisted > before)
+      modifiedFunctions.insert(&F);
   }
 
   mOut << "LICM running...\n"
@@ -256,6 +263,11 @@ LICM::run(Module& mod, ModuleAnalysisManager& mam)
 
   if (totalHoisted == 0)
     return PreservedAnalyses::all();
+
+  // 失效被修改函数的分析结果，确保后续 pass 使用正确的 LoopInfo 和 DominatorTree
+  for (Function* F : modifiedFunctions) {
+    fam.invalidate(*F, PreservedAnalyses::none());
+  }
 
   // LICM 只移动指令，不改变 CFG 结构
   PreservedAnalyses PA;

@@ -914,21 +914,27 @@ promoteMemoryToRegister(Function& F, DominatorTree& DT)
 PreservedAnalyses
 Mem2Reg::run(llvm::Module& mod, llvm::ModuleAnalysisManager& mam)
 {
+  // 使用管线的 FunctionAnalysisManager，确保后续 pass 能获得正确的分析结果
+  auto& proxy = mam.getResult<FunctionAnalysisManagerModuleProxy>(mod);
+  FunctionAnalysisManager& fam = proxy.getManager();
 
-  FunctionAnalysisManager fam;
-  PassBuilder pb;
-  pb.registerFunctionAnalyses(fam);
   bool flag = true;
+  SmallVector<Function*, 4> modifiedFunctions;
   for (Function& func : mod) {
     if (func.isDeclaration())
       continue;
     auto& DT = fam.getResult<DominatorTreeAnalysis>(func);
     if (promoteMemoryToRegister(func, DT)) {
       flag = false;
+      modifiedFunctions.push_back(&func);
     }
   }
   if (flag) {
     return PreservedAnalyses::all();
+  }
+  // 失效被修改函数的分析结果
+  for (Function* F : modifiedFunctions) {
+    fam.invalidate(*F, PreservedAnalyses::none());
   }
   PreservedAnalyses PA;
   PA.preserveSet<CFGAnalyses>();

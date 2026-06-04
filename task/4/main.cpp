@@ -6,6 +6,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include "AlgebraicIdentity.hpp"
 #include "CommonSubexpressionElimination.hpp"
 #include "ConstantFolding.hpp"
 #include "ConstantPropagation.hpp"
@@ -13,10 +14,10 @@
 #include "DeadStoreElimination.hpp"
 #include "InstructionCombining.hpp"
 #include "LICM.hpp"
-#include "loopUnroll.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
+#include "StrengthReduction.hpp"
 
 #ifdef TASK4_LLM
 
@@ -87,17 +88,20 @@ opt(llvm::Module& mod)
   // 先运行一轮常量传播+折叠，再运行 Mem2Reg，最后再运行一轮常量传播+折叠
   // 以保证 Mem2Reg 消除 alloca 后产生的新常量也能被优化
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(AlgebraicIdentity(llvm::errs()));
   mpm.addPass(Mem2Reg());
   mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(LICM(llvm::errs()));
-  mpm.addPass(LoopUnroll(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(AlgebraicIdentity(llvm::errs()));
   mpm.addPass(InstructionCombining(llvm::errs()));
+  mpm.addPass(StrengthReduction(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
   mpm.addPass(LICM(llvm::errs()));
   mpm.addPass(CommonSubexpressionElimination(llvm::errs()));
   mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(AlgebraicIdentity(llvm::errs()));
   mpm.addPass(LICM(llvm::errs()));
   mpm.addPass(DeadStoreElimination(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
