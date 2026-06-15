@@ -1,0 +1,27 @@
+上一轮优化的结果未达到最优，请根据反馈调整 Pass 序列。
+
+## 程序特征
+
+{features_summary}
+
+## 优化历史
+
+{history}
+
+## 当前最优结果
+
+- 最优 Pass 序列: {best_sequence}
+- 最优指令数: {best_instructions} 条
+- 最优 IR 大小: {best_size} 字节
+
+## 反馈分析
+
+{feedback}
+
+请根据以上信息，调整优化策略。注意：
+1. 避免重复之前效果不佳的序列
+2. 尝试不同的 Pass 组合或顺序
+3. 考虑是否需要更多轮的常量传播或 LICM
+4. 考虑是否需要增加/减少某些 Pass
+
+请输出新的 Pass 序列。
