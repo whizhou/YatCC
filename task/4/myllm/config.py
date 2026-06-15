@@ -15,7 +15,7 @@ class Config:
     """Agent 优化系统配置"""
 
     # ── LLM 配置 ──
-    api_key: str = "sk-8096edb78ae04c34a9cb043f4795e45c"
+    api_key: str = ""
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-flash"
     temperature: float = 0.0
