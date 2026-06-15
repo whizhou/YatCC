@@ -6,10 +6,21 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include "AlgebraicIdentity.hpp"
+#include "AllocaHoisting.hpp"
+#include "CommonSubexpressionElimination.hpp"
 #include "ConstantFolding.hpp"
+#include "ConstantPropagation.hpp"
+#include "DeadCodeElimination.hpp"
+#include "DeadStoreElimination.hpp"
+#include "FunctionInlining.hpp"
+#include "InstructionCombining.hpp"
+#include "LICM.hpp"
+#include "LoopUnroll.hpp"
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
+#include "StrengthReduction.hpp"
 
 #ifdef TASK4_LLM
 
@@ -70,22 +81,37 @@ opt(llvm::Module& mod)
         TASK4_DIR "/Mem2Reg.cpp",
         "Mem2Reg.xml",
         [](llvm::ModulePassManager& mpm) { mpm.addPass(Mem2Reg()); } },
-      { "ConstantFolding",
-        TASK4_DIR "/ConstantFolding.hpp",
-        TASK4_DIR "/ConstantFolding.cpp",
-        "ConstantFolding.xml",
-        [](llvm::ModulePassManager& mpm) {
-          mpm.addPass(ConstantFolding(llvm::errs()));
-        } },
     }));
 
 #else
 
   // 传统 LLVM Pass 来进行编译优化
   // 添加优化pass到管理器中
-  mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
+  // ConstantPropagation 内部循环执行常量传播和常量折叠直到收敛
+  // 先运行一轮常量传播+折叠，再运行 Mem2Reg，最后再运行一轮常量传播+折叠
+  // 以保证 Mem2Reg 消除 alloca 后产生的新常量也能被优化
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(AlgebraicIdentity(llvm::errs()));
+  mpm.addPass(FunctionInlining(llvm::errs()));
+  mpm.addPass(AllocaHoisting(llvm::errs()));
   mpm.addPass(Mem2Reg());
-  mpm.addPass(ConstantFolding(llvm::errs()));
+  mpm.addPass(DeadStoreElimination(llvm::errs()));
+  mpm.addPass(DeadCodeElimination(llvm::errs()));
+  mpm.addPass(LICM(llvm::errs()));
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(AlgebraicIdentity(llvm::errs()));
+  mpm.addPass(InstructionCombining(llvm::errs()));
+  mpm.addPass(StrengthReduction(llvm::errs()));
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(LICM(llvm::errs()));
+  mpm.addPass(LoopUnroll(llvm::errs()));
+  mpm.addPass(CommonSubexpressionElimination(llvm::errs()));
+  mpm.addPass(ConstantPropagation(llvm::errs()));
+  mpm.addPass(AlgebraicIdentity(llvm::errs()));
+  mpm.addPass(LICM(llvm::errs()));
+  mpm.addPass(DeadStoreElimination(llvm::errs()));
+  mpm.addPass(DeadCodeElimination(llvm::errs()));
+  mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
 
 #endif
 
