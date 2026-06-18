@@ -7,6 +7,9 @@ LLVM_TARBALL="${LLVM_DIR}/llvm-18.src.tar.xz"
 LLVM_TBLGEN="/usr/lib/llvm-18/bin/llvm-tblgen"
 LLVM_TASK5_INC_DIR="${LLVM_DIR}/task5/include"
 
+APT_PROXY="http://12.8.3.207:3138"
+APT_PROXY_CONF="/etc/apt/apt.conf.d/99task5-proxy"
+
 log() {
   printf '[task5-setup] %s\n' "$*"
 }
@@ -22,6 +25,115 @@ has_cmd() {
 
 has_pkg() {
   dpkg -s "$1" >/dev/null 2>&1
+}
+
+save_proxy_env() {
+  OLD_http_proxy="${http_proxy-}"
+  OLD_https_proxy="${https_proxy-}"
+  OLD_ftp_proxy="${ftp_proxy-}"
+  OLD_all_proxy="${all_proxy-}"
+
+  OLD_HTTP_PROXY="${HTTP_PROXY-}"
+  OLD_HTTPS_PROXY="${HTTPS_PROXY-}"
+  OLD_FTP_PROXY="${FTP_PROXY-}"
+  OLD_ALL_PROXY="${ALL_PROXY-}"
+}
+
+set_proxy_env() {
+  export http_proxy="${APT_PROXY}"
+  export https_proxy="${APT_PROXY}"
+  export ftp_proxy="${APT_PROXY}"
+  export all_proxy="${APT_PROXY}"
+
+  export HTTP_PROXY="${APT_PROXY}"
+  export HTTPS_PROXY="${APT_PROXY}"
+  export FTP_PROXY="${APT_PROXY}"
+  export ALL_PROXY="${APT_PROXY}"
+
+  cat > "${APT_PROXY_CONF}" <<EOF
+Acquire::http::Proxy "${APT_PROXY}/";
+Acquire::https::Proxy "${APT_PROXY}/";
+Acquire::ftp::Proxy "${APT_PROXY}/";
+EOF
+
+  log "proxy configured as ${APT_PROXY}"
+}
+
+restore_var() {
+  local name="$1"
+  local value="$2"
+
+  if [[ -n "${value}" ]]; then
+    export "${name}=${value}"
+  else
+    unset "${name}" || true
+  fi
+}
+
+cleanup() {
+  restore_var http_proxy "${OLD_http_proxy-}"
+  restore_var https_proxy "${OLD_https_proxy-}"
+  restore_var ftp_proxy "${OLD_ftp_proxy-}"
+  restore_var all_proxy "${OLD_all_proxy-}"
+
+  restore_var HTTP_PROXY "${OLD_HTTP_PROXY-}"
+  restore_var HTTPS_PROXY "${OLD_HTTPS_PROXY-}"
+  restore_var FTP_PROXY "${OLD_FTP_PROXY-}"
+  restore_var ALL_PROXY "${OLD_ALL_PROXY-}"
+
+  rm -f "${APT_PROXY_CONF}" || true
+
+  log "proxy environment restored"
+}
+
+configure_tsinghua_apt_source() {
+  log "configuring Tsinghua apt source for Ubuntu 24.04"
+
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    source /etc/os-release
+  else
+    die "missing /etc/os-release"
+  fi
+
+  [[ "${ID:-}" == "ubuntu" ]] || die "this script expects Ubuntu"
+  [[ "${VERSION_CODENAME:-}" == "noble" ]] || die "this script expects Ubuntu 24.04 noble, got VERSION_CODENAME=${VERSION_CODENAME:-unknown}"
+
+  local backup_suffix
+  backup_suffix="$(date +%Y%m%d-%H%M%S)"
+
+  if [[ -f /etc/apt/sources.list ]]; then
+    cp -a /etc/apt/sources.list "/etc/apt/sources.list.bak.${backup_suffix}"
+  fi
+
+  if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+    cp -a /etc/apt/sources.list.d/ubuntu.sources "/etc/apt/sources.list.d/ubuntu.sources.bak.${backup_suffix}"
+  fi
+
+  cat > /etc/apt/sources.list.d/ubuntu.sources <<EOF
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
+Suites: noble noble-updates noble-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
+Suites: noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+
+  # 避免旧的 /etc/apt/sources.list 和 ubuntu.sources 同时启用导致重复源警告。
+  # 如果你的系统没有 /etc/apt/sources.list，这一步不会有影响。
+  if [[ -f /etc/apt/sources.list ]]; then
+    cat > /etc/apt/sources.list <<EOF
+# Disabled by task5 setup script.
+# Ubuntu 24.04 uses /etc/apt/sources.list.d/ubuntu.sources below.
+EOF
+  fi
+
+  log "apt source configured: https://mirrors.tuna.tsinghua.edu.cn/ubuntu/"
 }
 
 install_if_missing() {
@@ -86,11 +198,11 @@ ensure_local_llvm_install() {
 download_llvm_source_subset() {
   mkdir -p "${LLVM_DIR}"
 
-  if [[ ! -f "${LLVM_TARBALL}" ]]; then
-    log "downloading llvm source archive"
-    wget -O "${LLVM_TARBALL}" \
-      https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/llvm-18.1.8.src.tar.xz
-  fi
+  
+  log "downloading llvm source archive"
+  wget -O "${LLVM_TARBALL}" \
+    https://gh-proxy.com/https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/llvm-18.1.8.src.tar.xz
+  
 
   rm -rf "${LLVM_DIR}/llvm"
   mkdir -p "${LLVM_DIR}/llvm"
@@ -153,6 +265,12 @@ configure_build_dir() {
 main() {
   [[ "${EUID}" -eq 0 ]] || die "please run this script as root"
   has_cmd apt-get || die "apt-get is required"
+
+  save_proxy_env
+  trap cleanup EXIT
+
+  set_proxy_env
+  configure_tsinghua_apt_source
 
   ensure_system_packages
   ensure_repo_dependencies
