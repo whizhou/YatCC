@@ -69,14 +69,10 @@ add_custom_target(
   SOURCES score.py)
 
 if(TASK5_REVIVE)
-  add_dependencies(task5-score task5-classic task5-answer test-rtlib)
+  add_dependencies(task5-score task5 task5-answer test-rtlib)
 else()
-  add_dependencies(task5-score task5-classic task4 task3-answer task5-answer test-rtlib)
+  add_dependencies(task5-score task5 task4 task3-answer task5-answer test-rtlib)
 endif()
-
-# 一键测评 task5-classic（别名，与 task5-score 等价）
-add_custom_target(task5-classic-score DEPENDS task5-score)
-
 
 foreach(_case ${_task5_cases})
   set(_output_dir ${CMAKE_CURRENT_BINARY_DIR}/${_case})
@@ -97,17 +93,17 @@ foreach(_case ${_task5_cases})
           -isystem '${_rtlib_dir}/include' \
           -o '${_output_dir}/answer.ll' \
           '${_task5_in}/${_case}' && \
-         ${CMAKE_BINARY_DIR}/task/5/task5-classic \
+         ${CMAKE_BINARY_DIR}/task/5/task5 \
           '${_output_dir}/answer.ll' '${_output_dir}/output.s'")
   else()
-    # 不复活：先跑 task4（同学实现）产出 IR，再用 task5-classic 降低到汇编。
+    # 不复活：先跑 task4（同学实现）产出 IR，再用 task5 降低到汇编。
     add_test(
       NAME task5/${_case}
       COMMAND
         bash -c
         "${CMAKE_BINARY_DIR}/task/4/task4-classic \
           '${_task3_out}/${_case}/answer.ll' '${_output_dir}/output.ll' && \
-         ${CMAKE_BINARY_DIR}/task/5/task5-classic \
+         ${CMAKE_BINARY_DIR}/task/5/task5 \
           '${_output_dir}/output.ll' '${_output_dir}/output.s'")
   endif()
 endforeach()

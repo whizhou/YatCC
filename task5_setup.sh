@@ -258,6 +258,11 @@ generate_riscv_tablegen_headers() {
 }
 
 configure_build_dir() {
+  if [[ "${YATCC_TASK5_SETUP_SKIP_CMAKE_CONFIGURE:-0}" == "1" ]]; then
+    log "skipping build directory configuration"
+    return 0
+  fi
+
   log "configuring build directory with YatCC_LLVM_DIR=${LLVM_DIR}"
   YatCC_LLVM_DIR="${LLVM_DIR}" cmake -S "${ROOT_DIR}" -B "${ROOT_DIR}/build" -G Ninja
 }
