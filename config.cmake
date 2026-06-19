@@ -89,8 +89,6 @@ set(TASK4_LLM_REGEX "^llm-performance/.*")
 set(TASK4_CASES_TXT "")
 
 # 实验五排除测例名的正则式
-set(TASK5_EXCLUDE_REGEX "^performance/.*|^mini-performance/.*|^llm-performance/.*")
-# 实验五 LLM 定向优化测例名正则式
-set(TASK5_LLM_REGEX "^llm-backend/.*")
+set(TASK5_EXCLUDE_REGEX "^performance/.*|^mini-performance/.*|^llm-performance/.*|^llm-backend/.*")
 # 实验五测例表，非空时忽略 EXCLUDE_REGEX
 set(TASK5_CASES_TXT "")

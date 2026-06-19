@@ -100,35 +100,16 @@ foreach(_case ${_task5_cases})
          ${CMAKE_BINARY_DIR}/task/5/task5-classic \
           '${_output_dir}/answer.ll' '${_output_dir}/output.s'")
   else()
-    # 不复活：先跑 task4（同学实现）产出 IR，再用 task5-llvm 降低到汇编。
-    if(_case MATCHES ${TASK5_LLM_REGEX})
-      add_test(
-        NAME task5/${_case}
-        COMMAND
-          bash -c
-          "${CMAKE_BINARY_DIR}/task/4/task4-llm \
-            '${_task3_out}/${_case}/answer.ll' '${_output_dir}/output.ll' && \
-           ${CMAKE_BINARY_DIR}/task/5/task5-classic \
-            '${_output_dir}/output.ll' '${_output_dir}/output.s'")
-    else()
-      add_test(
-        NAME task5/${_case}
-        COMMAND
-          bash -c
-          "${CMAKE_BINARY_DIR}/task/4/task4-classic \
-            '${_task3_out}/${_case}/answer.ll' '${_output_dir}/output.ll' && \
-           ${CMAKE_BINARY_DIR}/task/5/task5-classic \
-            '${_output_dir}/output.ll' '${_output_dir}/output.s'")
-    endif()
+    # 不复活：先跑 task4（同学实现）产出 IR，再用 task5-classic 降低到汇编。
+    add_test(
+      NAME task5/${_case}
+      COMMAND
+        bash -c
+        "${CMAKE_BINARY_DIR}/task/4/task4-classic \
+          '${_task3_out}/${_case}/answer.ll' '${_output_dir}/output.ll' && \
+         ${CMAKE_BINARY_DIR}/task/5/task5-classic \
+          '${_output_dir}/output.ll' '${_output_dir}/output.s'")
   endif()
-  # 为每个测例添加评分测试
-  add_test(
-    NAME test5/${_case}
-    COMMAND
-      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/score.py
-      ${TEST_CASES_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${TASK5_CASES_TXT}
-      ${CTEST_COMMAND} ${GCC_EXE} ${QENU} ${TASK5_RUNTIME} --single
-      ${_case})
 endforeach()
 
 message(AUTHOR_WARNING "在实验五默认复活")

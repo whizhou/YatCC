@@ -310,23 +310,4 @@ if __name__ == "__main__":
             )
         print("完成")
 
-        classic_cases = []
-        llm_cases = []
-        for cases in cases_helper.cases:
-            if cases.name.startswith("llm"):
-                llm_cases.append(cases)
-            else:
-                classic_cases.append(cases)
-        classic_cases_helper = CasesHelper(
-            srcdir=cases_helper.srcdir, bindir=cases_helper.bindir, cases=classic_cases
-        )
-        llm_cases_helper = CasesHelper(
-            srcdir=cases_helper.srcdir, bindir=cases_helper.bindir, cases=llm_cases
-        )
-
-        generate_score_report(
-            classic_cases_helper, "task5-classic", "score-classic.txt", "score-classic.json"
-        )
-        generate_score_report(
-            llm_cases_helper, "task5-llm", "score-llm.txt", "score-llm.json"
-        )
+        generate_score_report(cases_helper, "task5", "score.txt", "score.json")
