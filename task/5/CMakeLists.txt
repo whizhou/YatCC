@@ -1,4 +1,4 @@
-# task5-classic: LLVM IR -> RV64 assembly lowering (student-implemented).
+# task5: LLVM IR -> RV64 assembly lowering (student-implemented).
 
 set(TASK5_LLVM_RISCV_SOURCE_DIR "${YATCC_LLVM_SOURCE_DIR}/lib/Target/RISCV")
 set(TASK5_LLVM_RISCV_GEN_DIR "${YATCC_LLVM_DIR}/task5/include")
@@ -18,14 +18,12 @@ set(TASK5_LLVM_RISCV_GEN_DIR "${YATCC_LLVM_DIR}/task5/include")
 #       "Please run ./llvm/setup.sh or rebuild the devcontainer image with Task5 LLVM artifacts.")
 # endif()
 
-add_executable(task5-classic main.cpp EmitMIR.cpp EmitAsm.cpp AllocReg.cpp)
-target_include_directories(task5-classic PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
-target_include_directories(task5-classic PRIVATE ${LLVM_INCLUDE_DIRS})
-target_include_directories(task5-classic PRIVATE
+add_executable(task5 main.cpp EmitMIR.cpp EmitAsm.cpp AllocReg.cpp)
+target_include_directories(task5 PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(task5 PRIVATE ${LLVM_INCLUDE_DIRS})
+target_include_directories(task5 PRIVATE
   ${TASK5_LLVM_RISCV_SOURCE_DIR}
   ${TASK5_LLVM_RISCV_SOURCE_DIR}/MCTargetDesc
   ${TASK5_LLVM_RISCV_GEN_DIR}
 )
-target_link_libraries(task5-classic LLVM)
-
-add_custom_target(task5 DEPENDS task5-classic)
+target_link_libraries(task5 LLVM)

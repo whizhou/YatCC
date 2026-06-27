@@ -1,3 +1,18 @@
+file(REAL_PATH ../task5_setup.sh _yatcc_task5_setup_script BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set(_yatcc_task5_libtinfo /usr/lib/x86_64-linux-gnu/libtinfo.so)
+if(NOT EXISTS "${_yatcc_task5_libtinfo}")
+  message(STATUS "${_yatcc_task5_libtinfo} not found; running ${_yatcc_task5_setup_script}")
+  execute_process(
+    COMMAND
+      ${CMAKE_COMMAND} -E env YATCC_TASK5_SETUP_SKIP_CMAKE_CONFIGURE=1 bash
+      "${_yatcc_task5_setup_script}"
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    RESULT_VARIABLE _yatcc_task5_setup_result)
+  if(NOT _yatcc_task5_setup_result STREQUAL "0")
+    message(FATAL_ERROR "task5_setup.sh failed with exit code ${_yatcc_task5_setup_result}")
+  endif()
+endif()
+
 find_package(FLEX 2.6)
 find_package(BISON 3.8)
 
