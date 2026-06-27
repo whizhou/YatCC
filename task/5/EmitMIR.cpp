@@ -673,8 +673,62 @@ private:
   // 7) 自检时至少覆盖：负数除法/取余、较大移位位数、以及位运算混合场景。
   void emitBinary(const llvm::BinaryOperator& bo)
   {
-    llvm::report_fatal_error("TODO: Student Implementation");
-    return;
+    llvm::Register lhs = emitLoadValue(bo.getOperand(0));
+    llvm::Register rhs = emitLoadValue(bo.getOperand(1));
+    llvm::Register dst = vregOf(&bo);
+
+    switch (bo.getOpcode()) {
+      case llvm::Instruction::Add:
+        emitVAdd(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::Sub:
+        emitVSub(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::Mul:
+        emitVMul(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::SDiv:
+        emitVDiv(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::SRem:
+        emitVRem(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::And:
+        emitVAnd(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::Or:
+        emitVOr(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::Xor:
+        emitVXor(dst, lhs, rhs);
+        break;
+      case llvm::Instruction::Shl: {
+        const auto* ci = llvm::dyn_cast<llvm::ConstantInt>(bo.getOperand(1));
+        if (ci)
+          emitVSlli(dst, lhs, ci->getSExtValue());
+        else
+          emitVSll(dst, lhs, rhs);
+        break;
+      }
+      case llvm::Instruction::LShr: {
+        const auto* ci = llvm::dyn_cast<llvm::ConstantInt>(bo.getOperand(1));
+        if (ci)
+          emitVSrli(dst, lhs, ci->getSExtValue());
+        else
+          emitVSrl(dst, lhs, rhs);
+        break;
+      }
+      case llvm::Instruction::AShr: {
+        const auto* ci = llvm::dyn_cast<llvm::ConstantInt>(bo.getOperand(1));
+        if (ci)
+          emitVSrai(dst, lhs, ci->getSExtValue());
+        else
+          emitVSra(dst, lhs, rhs);
+        break;
+      }
+      default:
+        llvm::report_fatal_error(llvm::Twine("unsupported binary opcode: ") + bo.getOpcodeName());
+    }
   }
 
   // 翻译整数比较，目标是把结果变成 0/1，方便后续 branch/select 继续使用。
@@ -690,8 +744,63 @@ private:
   // 8) 自检重点：-1 与 0、INT_MIN 边界、以及无符号大数比较。
   void emitICmpInst(const llvm::ICmpInst& ci)
   {
-    llvm::report_fatal_error("TODO: Student Implementation");
-    return;
+    llvm::Register lhs = emitLoadValue(ci.getOperand(0));
+    llvm::Register rhs = emitLoadValue(ci.getOperand(1));
+    llvm::Register dst = vregOf(&ci);
+
+    switch (ci.getPredicate()) {
+      case llvm::ICmpInst::ICMP_EQ: {
+        llvm::Register tmp = nextTempVReg();
+        emitVXor(tmp, lhs, rhs);
+        emitVSltiu(dst, tmp, 1);
+        break;
+      }
+      case llvm::ICmpInst::ICMP_NE: {
+        llvm::Register tmp = nextTempVReg();
+        emitVXor(tmp, lhs, rhs);
+        emitVSltu(dst, llvm::Register(llvm::RISCV::X0), tmp);
+        break;
+      }
+      case llvm::ICmpInst::ICMP_SLT:
+        emitVSlt(dst, lhs, rhs);
+        break;
+      case llvm::ICmpInst::ICMP_SGE: {
+        llvm::Register tmp = nextTempVReg();
+        emitVSlt(tmp, lhs, rhs);
+        emitVXori(dst, tmp, 1);
+        break;
+      }
+      case llvm::ICmpInst::ICMP_SGT:
+        emitVSlt(dst, rhs, lhs);
+        break;
+      case llvm::ICmpInst::ICMP_SLE: {
+        llvm::Register tmp = nextTempVReg();
+        emitVSlt(tmp, rhs, lhs);
+        emitVXori(dst, tmp, 1);
+        break;
+      }
+      case llvm::ICmpInst::ICMP_ULT:
+        emitVSltu(dst, lhs, rhs);
+        break;
+      case llvm::ICmpInst::ICMP_UGE: {
+        llvm::Register tmp = nextTempVReg();
+        emitVSltu(tmp, lhs, rhs);
+        emitVXori(dst, tmp, 1);
+        break;
+      }
+      case llvm::ICmpInst::ICMP_UGT:
+        emitVSltu(dst, rhs, lhs);
+        break;
+      case llvm::ICmpInst::ICMP_ULE: {
+        llvm::Register tmp = nextTempVReg();
+        emitVSltu(tmp, rhs, lhs);
+        emitVXori(dst, tmp, 1);
+        break;
+      }
+      default:
+        llvm::report_fatal_error(llvm::Twine("unsupported icmp predicate: ") +
+                                 ci.getPredicateName(ci.getPredicate()));
+    }
   }
 
   // 翻译 load：先算地址，再按类型大小选择 ld 或 lw。
@@ -704,7 +813,13 @@ private:
   // 5) 自检时关注 i32 与 i64 混合读取，确认符号位行为符合预期。
   void emitLoadInst(const llvm::LoadInst& li)
   {
-    llvm::report_fatal_error("TODO: Student Implementation");
+    llvm::Register addr = emitLoadValue(li.getPointerOperand());
+    llvm::Register dst = vregOf(&li);
+    unsigned sz = dl_.getTypeAllocSize(li.getType());
+    if (sz == 4)
+      emitVLoad32(dst, addr);
+    else
+      emitVLoad(dst, addr);
   }
 
   // 翻译 store：先准备值和地址，再按大小选择 sd 或 sw。
@@ -717,7 +832,13 @@ private:
   // 5) 自检时建议覆盖：连续写入同一地址、i32 覆盖写、以及全局变量写入。
   void emitStoreInst(const llvm::StoreInst& si)
   {
-    llvm::report_fatal_error("TODO: Student Implementation");
+    llvm::Register val = emitLoadValue(si.getValueOperand());
+    llvm::Register addr = emitLoadValue(si.getPointerOperand());
+    unsigned sz = dl_.getTypeAllocSize(si.getValueOperand()->getType());
+    if (sz == 4)
+      emitVStore32(val, addr);
+    else
+      emitVStore(val, addr);
   }
 
    /*
